@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Card Mosaic</title>
+<link rel="stylesheet" href="./css/style.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+</head>
+<body>
+<noscript>
+  <div class="noscript-msg">
+    Card Mosaic needs JavaScript to run. The rules, board, and menus are
+    built as plain web pages, but they only come alive with scripting
+    enabled. Please enable JavaScript and reload.
+  </div>
+</noscript>
+
+<!-- Live regions (visually hidden) -->
+<div id="announcer-polite" class="visually-hidden" role="status" aria-live="polite"></div>
+<div id="announcer-assertive" class="visually-hidden" role="alert" aria-live="assertive"></div>
+
+<!-- Top status bar (global chrome) -->
+<header id="topbar">
+  <button id="btn-drawer-left" class="icon-btn drawer-toggle" type="button"
+          aria-controls="rail-left" aria-expanded="false">
+    <span aria-hidden="true">☰</span><span class="btn-sub"> Goal</span>
+  </button>
+  <p id="status-line" role="status" aria-live="polite">Card Mosaic</p>
+  <button id="btn-drawer-right" class="icon-btn drawer-toggle" type="button"
+          aria-controls="rail-right" aria-expanded="false">
+    <span class="btn-sub">Actions </span><span aria-hidden="true">☰</span>
+  </button>
+</header>
+
+<main id="main">
+
+  <!-- Loading -->
+  <section class="screen" id="screen-loading" aria-labelledby="loading-h" hidden>
+    <div class="screen-panel narrow">
+      <h2 id="loading-h" tabindex="-1">Setting the table…</h2>
+      <div id="loading-bar" class="progress" role="progressbar"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+           aria-label="Loading progress">
+        <div id="loading-bar-fill" class="progress-fill"></div>
+      </div>
+      <p id="loading-label">Preparing…</p>
+    </div>
+  </section>
+
+  <!-- Title -->
+  <section class="screen" id="screen-title" aria-labelledby="title-h" hidden>
+    <div class="screen-panel title-panel">
+      <h1 id="title-h" tabindex="-1">Card Mosaic</h1>
+      <p class="tagline">Place edge-coded cards so the artwork connects —
+        a quiet puzzle on a studio card table.</p>
+      <div id="title-resume" class="row title-resume" hidden>
+        <button id="btn-title-resume" class="btn btn-primary" type="button">Resume saved round</button>
+        <button id="btn-title-discard" class="btn btn-quiet" type="button">Discard</button>
+      </div>
+      <button id="btn-play" class="btn btn-primary btn-xl" type="button" data-autofocus>Play</button>
+      <div class="title-secondary">
+        <button id="btn-title-daily" class="btn" type="button">Daily challenge
+          <span id="daily-countdown" class="daily-countdown"></span></button>
+        <button id="btn-title-journey" class="btn" type="button">Journey</button>
+        <button id="btn-title-profile" class="btn" type="button">Profile</button>
+      </div>
+      <div class="title-tertiary">
+        <button id="btn-title-settings" class="btn btn-quiet" type="button">Settings</button>
+        <button id="btn-title-help" class="btn btn-quiet" type="button">How to play</button>
+      </div>
+      <p id="title-summary" class="blurb title-summary"></p>
+    </div>
+  </section>
+
+  <!-- Mode select -->
+  <section class="screen" id="screen-modes" aria-labelledby="modes-h" hidden>
+    <div class="screen-panel">
+      <h2 id="modes-h" tabindex="-1">Choose a mode</h2>
+      <div id="mode-list" class="card-grid"></div>
+      <button class="btn btn-quiet btn-nav" type="button" data-nav="title">Back to title</button>
+    </div>
+  </section>
+
+  <!-- Journey map -->
+  <section class="screen" id="screen-journey" aria-labelledby="journey-h" hidden>
+    <div class="screen-panel">
+      <h2 id="journey-h" tabindex="-1">Journey</h2>
+      <p class="blurb">Authored stages, one new idea at a time. Earn up to
+        three stars per stage.</p>
+      <div id="journey-map" class="journey-map"></div>
+      <button class="btn btn-quiet btn-nav" type="button" data-nav="modes">Back</button>
+    </div>
+  </section>
+
+  <!-- Lessons -->
+  <section class="screen" id="screen-lessons" aria-labelledby="lessons-h" hidden>
+    <div class="screen-panel">
+      <h2 id="lessons-h" tabindex="-1">Lessons</h2>
+      <p class="blurb">Short interactive lessons. Each asks you to perform
+        the move yourself.</p>
+      <ul id="lesson-list" class="lesson-list"></ul>
+      <button class="btn btn-quiet btn-nav" type="button" data-nav="modes">Back</button>
+    </div>
+  </section>
+
+  <!-- Setup (per-mode options before starting) -->
+  <section class="screen" id="screen-setup" aria-labelledby="setup-title" hidden>
+    <div class="screen-panel narrow">
+      <h2 id="setup-title" tabindex="-1">Set up</h2>
+      <p id="setup-blurb" class="blurb"></p>
+      <dl id="setup-meta" class="meta-list"></dl>
+      <p id="setup-ranked" class="ranked-note"></p>
+      <div id="setup-options" class="setup-options"></div>
+      <div class="row">
+        <button id="setup-start" class="btn btn-primary" type="button" data-autofocus>Start</button>
+        <button class="btn btn-quiet btn-nav" type="button" data-nav="modes">Back</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Play -->
+  <section class="screen" id="screen-play" aria-labelledby="play-h" hidden>
+    <h2 id="play-h" class="visually-hidden" tabindex="-1">Mosaic board</h2>
+    <div class="play-layout">
+
+      <aside id="rail-left" class="rail rail-left" aria-label="Objective and progress">
+        <h3 class="rail-h">Objective</h3>
+        <p id="hud-objective" class="hud-objective">Complete the mosaic.</p>
+        <p id="hud-lesson" class="hud-lesson" hidden></p>
+        <h3 class="rail-h">Progress</h3>
+        <p id="hud-progress">0 of 0 cells filled</p>
+        <p id="hud-analysis">0 matched · 0 mismatched · 0 open</p>
+        <h3 class="rail-h">Score</h3>
+        <dl id="hud-score-breakdown" class="score-breakdown"></dl>
+      </aside>
+
+      <div class="play-center">
+        <div id="canvas-container" aria-hidden="true"><div id="canvas-wrap"><canvas id="game-canvas"></canvas></div></div>
+        <div id="board-container">
+          <div id="board-grid" role="group" aria-label="Mosaic board"></div>
+          <div id="tray" role="group" aria-label="Card tray"></div>
+        </div>
+      </div>
+
+      <aside id="rail-right" class="rail rail-right" aria-label="Actions and status">
+        <div class="action-bar" role="group" aria-label="Round actions">
+          <button id="btn-rotate" class="btn action-btn" type="button">
+            <span aria-hidden="true">⟳</span> Rotate <kbd>R</kbd></button>
+          <button id="btn-lock" class="btn action-btn" type="button">
+            <span aria-hidden="true">✦</span> Lock <kbd>L</kbd></button>
+          <button id="btn-recall" class="btn action-btn" type="button">
+            <span aria-hidden="true">↩</span> Recall</button>
+          <button id="btn-undo" class="btn action-btn" type="button">
+            <span aria-hidden="true">⎌</span> Undo <kbd>U</kbd></button>
+          <button id="btn-hint" class="btn action-btn" type="button">
+            <span aria-hidden="true">?</span> Hint <kbd>H</kbd></button>
+          <button id="btn-pause" class="btn action-btn" type="button">
+            <span aria-hidden="true">Ⅱ</span> Pause <kbd>P</kbd></button>
+        </div>
+        <div class="rail-status">
+          <p id="hud-moves" class="hud-stat" hidden></p>
+          <p id="hud-time" class="hud-stat" hidden></p>
+          <p id="hud-ranked" class="ranked-badge" hidden>Ranked</p>
+        </div>
+      </aside>
+
+    </div>
+  </section>
+
+  <!-- Results -->
+  <section class="screen" id="screen-results" aria-labelledby="results-headline" hidden>
+    <div class="screen-panel narrow">
+      <h2 id="results-headline" tabindex="-1">Round over</h2>
+      <p id="results-sub" class="blurb"></p>
+      <p id="results-stars" class="stars" hidden></p>
+      <p id="results-newbest" class="newbest" hidden>New personal best!</p>
+      <h3>Score breakdown</h3>
+      <dl id="results-breakdown" class="score-breakdown"></dl>
+      <p id="results-par" class="blurb"></p>
+      <div id="results-achievements" class="achievement-unlocks" hidden></div>
+      <p id="results-board" class="blurb"></p>
+      <div class="row wrap">
+        <button id="btn-results-retry" class="btn" type="button">Retry</button>
+        <button id="btn-results-next" class="btn btn-primary" type="button" data-autofocus>Next</button>
+        <button id="btn-results-map" class="btn" type="button">Map</button>
+        <button id="btn-results-title" class="btn btn-quiet" type="button">Title</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Help (full rule cards) -->
+  <section class="screen" id="screen-help" aria-labelledby="help-h" hidden>
+    <div class="screen-panel">
+      <h2 id="help-h" tabindex="-1">How to play</h2>
+      <div class="rule-cards">
+        <article class="rule-card">
+          <h3>The goal</h3>
+          <p>Fill every cell of the mosaic. Wherever two cards touch, the
+            motifs on the touching edges must match.</p>
+        </article>
+        <article class="rule-card">
+          <h3>Placing cards</h3>
+          <p>Select a card in the tray, then choose an empty cell. Keyboard:
+            arrows move, Enter confirms.</p>
+        </article>
+        <article class="rule-card">
+          <h3>Matching edges</h3>
+          <p>Each matched edge glows and scores 10 points. Mismatched edges
+            are tinted — they never block you, but they score nothing.</p>
+        </article>
+        <article class="rule-card">
+          <h3>Rotating</h3>
+          <p>Some cards arrive turned. Select a tray card and Rotate (R)
+            to quarter-turn it before placing.</p>
+        </article>
+        <article class="rule-card">
+          <h3>Locking</h3>
+          <p>A card that matches every placed neighbor can be locked (L)
+            for 15 points. Locked cards cannot move.</p>
+        </article>
+        <article class="rule-card">
+          <h3>Swapping &amp; recall</h3>
+          <p>Tap two placed cards to swap them (−5 points). Recall returns
+            a placed card to its tray slot.</p>
+        </article>
+        <article class="rule-card">
+          <h3>Invalid moves</h3>
+          <p>Illegal tries are always reversible and cost 2 points — the
+            game explains why each one failed.</p>
+        </article>
+        <article class="rule-card">
+          <h3>Impostors</h3>
+          <p>Some trays hold decoy cards that belong nowhere. Leave them
+            aside to finish the true mosaic.</p>
+        </article>
+      </div>
+      <button class="btn btn-quiet btn-nav" type="button" data-nav="title">Back to title</button>
+    </div>
+  </section>
+
+  <!-- Profile -->
+  <section class="screen" id="screen-profile" aria-labelledby="profile-h" hidden>
+    <div class="screen-panel">
+      <h2 id="profile-h" tabindex="-1">Profile</h2>
+      <form id="profile-form" class="profile-form">
+        <label for="profile-name">Display name (stored on this device)</label>
+        <div class="row">
+          <input id="profile-name" name="profile-name" type="text"
+                 maxlength="24" autocomplete="nickname">
+          <button id="btn-profile-save" class="btn btn-primary" type="submit">Save</button>
+        </div>
+      </form>
+      <h3>Statistics</h3>
+      <dl id="profile-stats" class="score-breakdown"></dl>
+      <h3>Achievements</h3>
+      <ul id="profile-achievements" class="achievement-grid"></ul>
+      <button class="btn btn-quiet btn-nav" type="button" data-nav="title">Back to title</button>
+    </div>
+  </section>
+
+  <!-- Score chase leaderboards -->
+  <section class="screen" id="screen-boards" aria-labelledby="boards-h" hidden>
+    <div class="screen-panel narrow">
+      <h2 id="boards-h" tabindex="-1">Score chase</h2>
+      <div class="scope-toggle" role="group" aria-label="Leaderboard scope">
+        <button id="btn-boards-global" class="btn" type="button" aria-pressed="true">Global</button>
+        <button id="btn-boards-friends" class="btn" type="button" aria-pressed="false">Friends</button>
+      </div>
+      <p id="boards-note" class="ranked-note"></p>
+      <ol id="boards-list" class="boards-list"></ol>
+      <button class="btn btn-quiet btn-nav" type="button" data-nav="title">Back to title</button>
+    </div>
+  </section>
+
+  <!-- Compatibility notice -->
+  <section class="screen" id="screen-compat" aria-labelledby="compat-h" hidden>
+    <div class="screen-panel narrow">
+      <h2 id="compat-h" tabindex="-1">Limited graphics mode</h2>
+      <p class="blurb">This browser could not start WebGL, so the
+        three-dimensional card table is unavailable. Nothing is lost: the
+        full game runs on the standard board below, with the same rules,
+        scoring, and progress. Every card, cell, and action is a normal
+        button you can tap, click, or reach by keyboard.</p>
+      <button id="btn-compat-dismiss" class="btn btn-primary" type="button" data-autofocus>
+        Continue to the game</button>
+    </div>
+  </section>
+
+</main>
+
+<footer id="footer">
+  <p>Card Mosaic — a quiet studio puzzle. Progress is stored locally on
+    this device.</p>
+</footer>
+
+<!-- Pause overlay -->
+<div class="overlay" id="overlay-pause" role="dialog" aria-modal="true"
+     aria-labelledby="pause-h" hidden>
+  <div class="overlay-panel">
+    <h2 id="pause-h" tabindex="-1">Paused</h2>
+    <button id="btn-resume" class="btn btn-primary" type="button" data-autofocus>Resume</button>
+    <div class="pause-sections">
+      <section class="pause-section" aria-label="Settings">
+        <h3>Settings</h3>
+        <div class="row wrap">
+          <button id="btn-pause-audio" class="btn" type="button">Audio</button>
+          <button id="btn-pause-graphics" class="btn" type="button">Graphics</button>
+          <button id="btn-pause-controls" class="btn" type="button">Controls</button>
+          <button id="btn-pause-accessibility" class="btn" type="button">Accessibility</button>
+        </div>
+      </section>
+      <section class="pause-section" aria-label="Help">
+        <h3>Help</h3>
+        <button id="btn-pause-help" class="btn" type="button">How to play</button>
+      </section>
+      <section class="pause-section" aria-label="Leave">
+        <h3>Round</h3>
+        <div class="row wrap">
+          <button id="btn-pause-restart" class="btn" type="button">Restart round</button>
+          <button id="btn-pause-concede" class="btn" type="button">Concede round</button>
+          <button id="btn-pause-leave" class="btn btn-danger" type="button">Leave round</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- Settings overlay -->
+<div class="overlay" id="overlay-settings" role="dialog" aria-modal="true"
+     aria-labelledby="settings-h" hidden>
+  <div class="overlay-panel wide">
+    <div class="overlay-head">
+      <h2 id="settings-h" tabindex="-1">Settings</h2>
+      <button id="btn-settings-close" class="icon-btn" type="button" aria-label="Close settings">✕</button>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Settings sections">
+      <button id="tab-audio" class="tab" type="button" role="tab"
+              aria-controls="panel-audio" aria-selected="true">Audio</button>
+      <button id="tab-graphics" class="tab" type="button" role="tab"
+              aria-controls="panel-graphics" aria-selected="false">Graphics</button>
+      <button id="tab-controls" class="tab" type="button" role="tab"
+              aria-controls="panel-controls" aria-selected="false">Controls</button>
+      <button id="tab-accessibility" class="tab" type="button" role="tab"
+              aria-controls="panel-accessibility" aria-selected="false">Accessibility</button>
+    </div>
+
+    <div id="panel-audio" class="tab-panel" role="tabpanel" aria-labelledby="tab-audio">
+      <div class="field">
+        <label for="set-music">Music volume</label>
+        <input id="set-music" type="range" min="0" max="1" step="0.05">
+      </div>
+      <div class="field">
+        <label for="set-effects">Effects volume</label>
+        <input id="set-effects" type="range" min="0" max="1" step="0.05">
+      </div>
+      <div class="field">
+        <label for="set-ambience">Ambience volume</label>
+        <input id="set-ambience" type="range" min="0" max="1" step="0.05">
+      </div>
+      <div class="field">
+        <label for="set-voice">Voice volume</label>
+        <input id="set-voice" type="range" min="0" max="1" step="0.05">
+      </div>
+      <div class="field check">
+        <input id="set-muted" type="checkbox">
+        <label for="set-muted">Mute all audio</label>
+      </div>
+    </div>
+
+    <div id="panel-graphics" class="tab-panel" role="tabpanel"
+         aria-labelledby="tab-graphics" hidden>
+      <div class="field">
+        <label for="set-quality">Graphics quality</label>
+        <select id="set-quality">
+          <option value="low">Low — battery saver</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+      <fieldset class="field">
+        <legend>Table theme</legend>
+        <div id="set-theme-list" class="theme-list"></div>
+      </fieldset>
+      <div class="field check">
+        <input id="set-cvd" type="checkbox">
+        <label for="set-cvd">Color-vision-safe motif palette</label>
+      </div>
+    </div>
+
+    <div id="panel-controls" class="tab-panel" role="tabpanel"
+         aria-labelledby="tab-controls" hidden>
+      <table class="bindings-table">
+        <caption>Keyboard bindings</caption>
+        <tbody>
+          <tr><th scope="row"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></th><td>Move focus among cells and tray cards</td></tr>
+          <tr><th scope="row"><kbd>Enter</kbd> / <kbd>Space</kbd></th><td>Select or confirm</td></tr>
+          <tr><th scope="row"><kbd>Esc</kbd></th><td>Cancel selection, close dialog, or pause</td></tr>
+          <tr><th scope="row"><kbd>U</kbd></th><td>Undo</td></tr>
+          <tr><th scope="row"><kbd>H</kbd></th><td>Hint</td></tr>
+          <tr><th scope="row"><kbd>R</kbd></th><td>Rotate selected tray card</td></tr>
+          <tr><th scope="row"><kbd>L</kbd></th><td>Lock selected cell</td></tr>
+          <tr><th scope="row"><kbd>P</kbd></th><td>Pause</td></tr>
+        </tbody>
+      </table>
+      <button id="btn-controls-reset" class="btn" type="button">Reset bindings to defaults</button>
+    </div>
+
+    <div id="panel-accessibility" class="tab-panel" role="tabpanel"
+         aria-labelledby="tab-accessibility" hidden>
+      <div class="field check">
+        <input id="set-reduced-motion" type="checkbox">
+        <label for="set-reduced-motion">Reduced motion (no swoops, shakes, or pulses)</label>
+      </div>
+      <div class="field check">
+        <input id="set-high-contrast" type="checkbox">
+        <label for="set-high-contrast">High contrast</label>
+      </div>
+      <div class="field check">
+        <input id="set-large-text" type="checkbox">
+        <label for="set-large-text">Larger text</label>
+      </div>
+      <div class="field check">
+        <input id="set-left-handed" type="checkbox">
+        <label for="set-left-handed">Left-handed layout</label>
+      </div>
+      <div class="field check">
+        <input id="set-hold-toggle" type="checkbox">
+        <label for="set-hold-toggle">Hold to confirm instead of toggle</label>
+      </div>
+      <div class="field check">
+        <input id="set-timing-assist" type="checkbox">
+        <label for="set-timing-assist">Timing assist (relaxed clocks where rules allow)</label>
+      </div>
+      <div class="field check">
+        <input id="set-haptics" type="checkbox">
+        <label for="set-haptics">Haptic feedback</label>
+      </div>
+      <div class="field check">
+        <input id="set-captions" type="checkbox">
+        <label for="set-captions">Captions for meaningful sounds</label>
+      </div>
+      <div class="field">
+        <button id="btn-tutorial-replay" class="btn" type="button">Replay tutorials</button>
+      </div>
+      <h3 class="settings-sub">Privacy</h3>
+      <div class="field check">
+        <input id="set-telemetry" type="checkbox">
+        <label for="set-telemetry">Share anonymous usage statistics</label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Help overlay (compact) -->
+<div class="overlay" id="overlay-help" role="dialog" aria-modal="true"
+     aria-labelledby="helpo-h" hidden>
+  <div class="overlay-panel">
+    <div class="overlay-head">
+      <h2 id="helpo-h" tabindex="-1">How to play</h2>
+      <button id="btn-help-close" class="icon-btn" type="button" aria-label="Close help">✕</button>
+    </div>
+    <div class="rule-cards compact">
+      <article class="rule-card">
+        <h3>Goal</h3>
+        <p>Fill the mosaic so touching edges share the same motif.</p>
+      </article>
+      <article class="rule-card">
+        <h3>Moves</h3>
+        <p>Select a tray card, then an empty cell. Rotate turned cards (R).
+            Lock fully-matching cards (L) for bonus points.</p>
+      </article>
+      <article class="rule-card">
+        <h3>Fixing mistakes</h3>
+        <p>Recall a card, swap two placed cards, or Undo (U). Invalid tries
+            are explained and cost 2 points.</p>
+      </article>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm dialog -->
+<div class="overlay" id="overlay-confirm" role="dialog" aria-modal="true"
+     aria-labelledby="confirm-title" hidden>
+  <div class="overlay-panel narrow">
+    <h2 id="confirm-title" tabindex="-1">Are you sure?</h2>
+    <p id="confirm-message" class="blurb"></p>
+    <div class="row">
+      <button id="btn-confirm-yes" class="btn btn-danger" type="button" data-autofocus>Confirm</button>
+      <button id="btn-confirm-no" class="btn" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toasts + captions -->
+<div id="toasts" aria-hidden="true"></div>
+<p id="captions" class="captions" hidden></p>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
