@@ -12,6 +12,29 @@ const SCALE = [220.0, 261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.
 
 const BUSES = ['music', 'effects', 'ambience', 'voice'];
 
+// Authored one-shot clips (sfx/<name>.opus, see sfx/manifest.json) mapped onto
+// the same event names as the synth recipes below. Clips are fetched lazily —
+// only after the user-gesture unlock created the AudioContext — and decoded
+// once into a cache. While a clip is still loading (or if it failed to load)
+// the existing synth recipe for that event plays instead.
+const SFX_BY_EVENT = {
+  select: 'card-select',
+  place: 'card-place',
+  recall: 'card-recall',
+  swap: 'card-swap',
+  rotate: 'card-rotate',
+  lock: 'card-lock',
+  invalid: 'invalid-move',
+  match: 'edge-match',
+  complete: 'mosaic-complete',
+  fail: 'round-fail',
+  pause: 'pause-toggle',
+  hint: 'hint-reveal',
+  achievement: 'achievement-unlock',
+  uiOpen: 'ui-open',
+  uiClose: 'ui-close',
+};
+
 // Per-event synth recipes. Each is a function of (engine, when, variant) that
 // schedules its nodes on the effects bus. Variants come from the seeded RNG so
 // a given session always sounds the same (replay-deterministic timbre).
@@ -66,6 +89,9 @@ export class AudioEngine {
     this._musicStep = 0;
     this._ducked = false;
     this._disposed = false;
+    // sfx clip cache: name -> AudioBuffer | null (null = load failed, don't retry)
+    this._sfxBuffers = new Map();
+    this._sfxLoading = new Map();
   }
 
   // -------------------------------------------------------------------------
@@ -162,6 +188,7 @@ export class AudioEngine {
 
   playEvent(name, opts = {}) {
     if (!this._ctx || this._ctx.state !== 'running' || this._muted) return;
+    if (this._playSampleFor(name)) return;
     const recipe = this._recipes[name];
     if (!recipe) return;
     const t = this._ctx.currentTime + 0.01;
@@ -170,6 +197,53 @@ export class AudioEngine {
     } catch {
       /* never let audio break gameplay */
     }
+  }
+
+  /**
+   * Try the authored sample for an event. Returns true when a decoded clip
+   * was scheduled on the effects bus (synth recipe must then be skipped).
+   * Returns false while the clip is loading or after a load failure, so the
+   * caller falls back to synthesis; a fetch is kicked off in the background.
+   */
+  _playSampleFor(name) {
+    const clip = SFX_BY_EVENT[name];
+    if (!clip || !this._ctx || typeof fetch !== 'function') return false;
+    if (this._sfxBuffers.has(clip)) {
+      const buffer = this._sfxBuffers.get(clip);
+      if (!buffer) return false;
+      try {
+        const src = this._ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(this._buses.effects || this._master);
+        src.start();
+      } catch {
+        /* never let audio break gameplay */
+      }
+      return true;
+    }
+    this._loadClip(clip);
+    return false;
+  }
+
+  /** Fire-and-forget fetch + decode of one clip; caches result or failure. */
+  _loadClip(clip) {
+    if (this._sfxLoading.has(clip)) return;
+    const pending = fetch(`sfx/${clip}.opus`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`http ${res.status}`);
+        return res.arrayBuffer();
+      })
+      .then((bytes) => (this._ctx ? this._ctx.decodeAudioData(bytes) : null))
+      .then((buffer) => {
+        this._sfxBuffers.set(clip, buffer || null);
+      })
+      .catch(() => {
+        this._sfxBuffers.set(clip, null);
+      })
+      .finally(() => {
+        this._sfxLoading.delete(clip);
+      });
+    this._sfxLoading.set(clip, pending);
   }
 
   // -------------------------------------------------------------------------

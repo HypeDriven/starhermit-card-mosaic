@@ -359,6 +359,7 @@ const MIME = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
   '.webmanifest': 'application/manifest+json',
+  '.opus': 'audio/ogg',
 };
 
 function serveStatic(req, res, url) {
