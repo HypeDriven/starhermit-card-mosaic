@@ -163,7 +163,9 @@ export class Platform {
   }
 
   _post(path, body) {
-    // fire and forget; never throws
+    // Fire and forget only when this game's API contract was positively
+    // detected; the UUID static host has a different shared /api surface.
+    if (!this.hosted) return;
     this._fetch(this.apiBase + path, { method: 'POST', body, auth: true }).catch(() => {});
   }
 
