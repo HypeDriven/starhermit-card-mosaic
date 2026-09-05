@@ -461,8 +461,13 @@ export function listLegalCommands(state) {
   for (let c = 0; c < state.cells.length; c++) {
     const id = state.cells[c];
     if (id === null) continue;
+    // recall is only legal for cards that own a tray slot; anchored cards (slot < 0) cannot be recalled
     if (!state.cards[id].locked && state.cards[id].slot >= 0) {
       out.push({ type: 'recall', cell: c });
+    }
+    // swap is legal for any two unlocked placed cards — validateCommand never checks slot,
+    // so enumerating it here is required to keep this the single source of truth.
+    if (!state.cards[id].locked) {
       for (let d = c + 1; d < state.cells.length; d++) {
         const jd = state.cells[d];
         if (jd !== null && !state.cards[jd].locked) out.push({ type: 'swap', a: c, b: d });

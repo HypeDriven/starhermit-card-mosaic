@@ -235,6 +235,7 @@ export class Session {
     return {
       schema: REPLAY_SCHEMA,
       build: BUILD_VERSION,
+      mode: this.mode,
       contentVersion: this.content.version,
       contentId: this.content.contentId,
       seed: this.content.seed,

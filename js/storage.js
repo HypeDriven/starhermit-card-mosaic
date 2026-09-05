@@ -26,15 +26,24 @@ function store() {
 }
 
 const memory = new Map();
-const backing = typeof localStorage !== 'undefined' ? store() : null;
+let backing = typeof localStorage !== 'undefined' ? store() : null;
 
 function rawGet(key) {
   if (backing) return backing.getItem(PREFIX + key);
   return memory.get(key) ?? null;
 }
 function rawSet(key, value) {
-  if (backing) backing.setItem(PREFIX + key, value);
-  else memory.set(key, value);
+  if (backing) {
+    try {
+      backing.setItem(PREFIX + key, value);
+      return;
+    } catch {
+      // localStorage became unusable mid-session (quota exceeded etc.): degrade
+      // to the in-memory fallback so autosave never interrupts play.
+      backing = null;
+    }
+  }
+  memory.set(key, value);
 }
 function rawDel(key) {
   if (backing) backing.removeItem(PREFIX + key);

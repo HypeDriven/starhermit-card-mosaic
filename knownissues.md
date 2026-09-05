@@ -7,18 +7,23 @@ alongside the game's own test suite and headless-Chrome / HTTP probing.
 
 | Check | Result |
 | --- | --- |
-| `npm test` | not available — this game ships no `package.json`; `npm test` exits with `ENOENT ... /card-mosaic/package.json`. The documented entry point is `node tests/run.mjs` (README.md:17, ARCHITECTURE.md:84). |
+| `npm test` | 67/67 pass, 0 fail (rules 42, content 11, replay 1, fuzz 6, golden 7) |
 | `node tests/run.mjs` | 67/67 pass, 0 fail (rules 42, content 11, replay 1, fuzz 6, golden 7) |
 | `node --check` on all modules | clean (`js/*.js`, `server.js`, `sw.js`, `tests/*.mjs`) |
-| `tests/e2e.mjs` (headless Chrome) | not present. Substituted a headless-Chrome smoke against `node server.js 39303`: boot to title, `#btn-play` → mode select → `[data-mode="practice"]` → setup. No page errors; one 404 (see defect 3). |
+| `npm run test:e2e` / `node tests/e2e.mjs` (headless Chromium) | **E2E PASS** — desktop + mobile playthroughs, no page errors (exit 0). |
 | HTTP fuzz of `server.js` (directories, traversal, malformed encodings, 20 malformed bodies + odd query strings on all 9 API routes) | survived; no crash, no traversal |
 
-## Confirmed defects
+## Resolved defects
 
-Defects 1 and 5 were reproduced against a running copy of `server.js`; 2, 4 and 6 against the shipped
-modules; 3 in a real browser.
+All confirmed defects below were re-verified against the current source and fixed on 2026-09-04.
+Each is marked with the fix applied. (Defects 1 and 5 were originally reproduced against a running
+copy of `server.js`; 2, 4 and 6 against the shipped modules; 3 in a real browser.)
 
 ### 1. A score can be submitted to any leaderboard, regardless of which puzzle was actually played
+
+**RESOLVED** — `server.js:216-218` now rejects with `400 board-content-mismatch` whenever
+`body.board !== result.contentId`, so a daily board can only ever contain daily results (the honest
+client already sends `board = result.contentId` at `js/main.js:601`).
 
 - **File:** `server.js:196-249` (the `/api/v1/scores` handler)
 - **Trigger:** solve a Practice puzzle, then `POST /api/v1/scores` with `board: "daily-<today>"` and the
@@ -46,6 +51,10 @@ modules; 3 in a real browser.
 
 ### 2. `listLegalCommands` enumerates no swaps at all on a fresh board
 
+**RESOLVED** — `js/rules.js:464-474` now scopes the `recall` output behind the `slot >= 0` guard while
+emitting the `swap` candidates for every unlocked placed cell pair (matching `validateCommand`'s `swap`
+case, which never inspects `slot`). A fresh `practice` board now lists all legal swaps.
+
 - **File:** `js/rules.js:451-476` (`listLegalCommands`), specifically the `slot >= 0` guard on line 464
   that wraps the swap loop on lines 466-469
 - **Trigger:** call `listLegalCommands` on any starting board that contains anchored cards.
@@ -70,6 +79,10 @@ modules; 3 in a real browser.
 
 ### 3. Every page load 404s on `/favicon.ico`
 
+**RESOLVED** — already fixed in the current source: `index.html:4` declares
+`<link rel="icon" href="./favicon.svg" type="image/svg+xml">`, and `favicon.svg` is served (HTTP 200).
+No code change required; the browser no longer requests the missing `/favicon.ico`.
+
 - **File:** `index.html:3-10` (the `<head>` block)
 - **Trigger:** load the game in any browser.
 - **Behaviour:** the head declares a charset, viewport, colour-scheme, title, stylesheet and import map,
@@ -85,6 +98,10 @@ modules; 3 in a real browser.
   ```
 
 ### 4. Replay envelopes omit `mode`, so every server-validated result is stored as `mode: "practice"`
+
+**RESOLVED** — `js/session.js:238` now emits `mode: this.mode` in `serializeReplay`; `Session.replay`
+(`js/session.js:255`) already consumes `envelope.mode`, so the server stores the correct mode. Verified: a
+solved daily submission reads back from the board with `"mode":"daily"`.
 
 - **File:** `js/session.js:234-247` (`serializeReplay`) versus `js/session.js:255`
   (`new Session(content, { mode: envelope.mode || 'practice', ... })`)
@@ -105,6 +122,11 @@ modules; 3 in a real browser.
   ```
 
 ### 5. A submission with `result.score` missing returns 500 `internal-error` instead of a 4xx
+
+**RESOLVED** — `server.js:220-222` now validates `result.score` exists, is an object, and has a numeric
+`result.score.total`, returning `400 missing-score` for malformed score fields instead of leaking a
+`TypeError` into the 500 handler. Verified: `score:null` and a `score`-omitted submission both now
+return `400 {"error":"missing-score"}` and the server stays alive.
 
 - **File:** `server.js:224` (`if (recomputed.result.score.total !== result.score.total) return sendError(res, 400, 'score-mismatch');`)
 - **Trigger:** a submission that passes every earlier check — correct `contentVersion`, a resolvable
@@ -131,6 +153,12 @@ modules; 3 in a real browser.
 
 
 ### 6. A full localStorage throws out of every `save*` call and into the game loop
+
+**RESOLVED** — `js/storage.js:31-47` now wraps every `backing.setItem` in a `try/catch`; on a failure
+(`QuotaExceededError` etc.) it sets `backing = null` so the module degrades to its existing in-memory
+fallback for the rest of the session. `saveSettings` / `saveProgress` / `saveAchievements` /
+`saveBoards` / `saveSnapshot` no longer propagate a quota error into the play loop. Verified: after a
+load-time probe passes and `setItem` starts throwing, repeated `save*` calls complete without throwing.
 
 - **File:** `js/storage.js:35-38` (`rawSet`), with the one-shot probe at `js/storage.js:17-29`
 - **Trigger:** localStorage reaching quota part-way through a session (large blobs from another origin

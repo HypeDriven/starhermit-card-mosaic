@@ -212,6 +212,15 @@ async function handleScores(req, res) {
   if (replay.contentId !== content.contentId || result.contentId !== content.contentId) {
     return sendError(res, 400, 'content-id-mismatch');
   }
+  // the destination board must be the puzzle that was actually played: a daily
+  // board may only contain daily results (prevents cross-board submissions)
+  if (board !== result.contentId) {
+    return sendError(res, 400, 'board-content-mismatch');
+  }
+  // a malformed score is a bad request, not a server fault
+  if (!result.score || typeof result.score !== 'object' || typeof result.score.total !== 'number') {
+    return sendError(res, 400, 'missing-score');
+  }
 
   // replay the command log through the real session pipeline
   let recomputed;
