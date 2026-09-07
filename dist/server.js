@@ -69,11 +69,15 @@ function readBody(req) {
 async function readJsonBody(req) {
   const raw = await readBody(req);
   if (!raw) return {};
+  let parsed;
   try {
-    return JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch {
     throw new Error('bad-json');
   }
+  // a literal `null` / scalar body is a malformed request, not a server fault:
+  // hand handlers an empty object so they answer 400 rather than throwing
+  return parsed && typeof parsed === 'object' ? parsed : {};
 }
 
 function safeName(s) {
@@ -211,6 +215,15 @@ async function handleScores(req, res) {
   if (!content) return sendError(res, 400, 'unknown-content-id');
   if (replay.contentId !== content.contentId || result.contentId !== content.contentId) {
     return sendError(res, 400, 'content-id-mismatch');
+  }
+  // the destination board must be the puzzle that was actually played: a daily
+  // board may only contain daily results (prevents cross-board submissions)
+  if (board !== result.contentId) {
+    return sendError(res, 400, 'board-content-mismatch');
+  }
+  // a malformed score is a bad request, not a server fault
+  if (!result.score || typeof result.score !== 'object' || typeof result.score.total !== 'number') {
+    return sendError(res, 400, 'missing-score');
   }
 
   // replay the command log through the real session pipeline
@@ -359,6 +372,7 @@ const MIME = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
   '.webmanifest': 'application/manifest+json',
+  '.opus': 'audio/ogg',
 };
 
 function serveStatic(req, res, url) {

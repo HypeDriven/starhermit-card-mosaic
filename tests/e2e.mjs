@@ -269,6 +269,26 @@ try {
       await page.screenshot({ path: `/tmp/card-mosaic-e2e-leave-${tag}.png` });
     });
 
+    // leaving must preserve a *playable* round (not a conceded one) along with
+    // the round context the log alone cannot carry
+    await step('resume saved round returns to play with context intact', async () => {
+      await page.click('#btn-title-resume');
+      await page.waitForFunction(() => window.__cm?.phase === 'active');
+      await page.waitForSelector('#screen-play:not([hidden])');
+      const info = await page.evaluate(() => ({
+        result: window.__cm.session.result,
+        mode: window.__cm.mode,
+        stageIndex: window.__cm.stageIndex,
+        contentId: window.__cm.session.content.contentId,
+      }));
+      if (info.result) throw new Error('resumed round was already terminal: ' + JSON.stringify(info.result));
+      if (info.mode !== 'journey' || info.stageIndex !== 1) {
+        throw new Error('resumed round lost its journey context: ' + JSON.stringify(info));
+      }
+      console.log('  resumed', info.contentId, 'stage', info.stageIndex, 'still playable');
+      await page.screenshot({ path: `/tmp/card-mosaic-e2e-resumed-${tag}.png` });
+    });
+
     await ctx.close();
     await expectClean(tag);
     console.log('ok - desktop pass clean of page errors');

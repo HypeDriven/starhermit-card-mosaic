@@ -13,6 +13,48 @@ alongside the game's own test suite and headless-Chrome / HTTP probing.
 | `npm run test:e2e` / `node tests/e2e.mjs` (headless Chromium) | **E2E PASS** — desktop + mobile playthroughs, no page errors (exit 0). |
 | HTTP fuzz of `server.js` (directories, traversal, malformed encodings, 20 malformed bodies + odd query strings on all 9 API routes) | survived; no crash, no traversal |
 
+## Review pass 2026-09-07 (Claude Opus 5) — fixed
+
+All verified with `npm test` (67/67), `npm run test:e2e` (desktop + mobile, exit 0, no page errors)
+and a live `server.js` API probe.
+
+1. **"Leave round" destroyed the round it promised to save.** `onLeave` called `session.concede()`
+   and *then* saved the snapshot, so the pause dialog's "You can resume later from the last saved
+   position" produced a terminal, conceded session; Resume dropped straight into a results screen.
+   Leaving now stops the clock and stores the live round; Concede remains the separate confirmed
+   action. New e2e step `resume saved round returns to play with context intact` guards this.
+2. **Resume lost all round context.** The command log cannot express which journey stage, challenge,
+   daily key, practice difficulty or tutorial step produced a round, and `snapshot.lesson` was never
+   written. Completing a resumed journey stage therefore recorded no stars/progress and offered no
+   "Next stage". Snapshots now carry a `meta` block (stage/challenge/difficulty/daily/lesson/step and
+   the wall clock), restored in `_resumeSnapshot`; assist counters ride on the session snapshot.
+3. **Remote leaderboard always empty.** `_showBoards` asked the host for board `daily`, but boards are
+   keyed by `contentId` (`server.js` rejects any other destination with `board-content-mismatch`).
+   Probed live: `board=daily` → 0 entries, `board=daily-2026-09-07` → 1 entry for the same submission.
+   The client now requests today's daily `contentId`.
+4. **A literal `null` (or scalar) JSON body returned 500.** `readJsonBody` handed `null` to handlers
+   that immediately dereferenced it. Confirmed against the pre-fix server: `POST /api/v1/achievements`
+   with body `null` → `500 internal-error`; now `400 missing-key` (and `400 missing-board-or-entry` /
+   `400 missing-version` on `/scores` and `/cloud`). Closes the reporting weakness noted below.
+5. **Cross-round audio/UI state leaked.** `_prevMatched` and `_lastWasNewBest` were never reset per
+   round, so the first board event of a new round could fire (or swallow) the match sting, and modes
+   with no persisted best (practice, learn, score chase) could inherit the previous round's
+   "new best" verdict.
+6. **StarHermit APIs implemented but never called.** `platform.postAchievement` and
+   `platform.activityEnd` had no call sites; unlocks are now mirrored to the host and the launch
+   activity is closed on `pagehide` (which also flushes telemetry and saves the round).
+7. **Stale service-worker cache.** `CACHE_VERSION` had never been bumped, so returning players would
+   be pinned to the previous build by the cache-first fetch handler. Bumped to `cardmosaic-v2` and
+   `favicon.svg` added to the precache list.
+8. **`dist/` was stale and incomplete.** It predated the 2026-09-04 fixes and `build-dist.sh` never
+   copied `sfx/` (which `audio.js` fetches), the icons or `LICENSE.md`. Script fixed and `dist/` rebuilt.
+9. **Housekeeping.** `LICENSE.md` (PolyForm Noncommercial 1.0.0) added as required by the root
+   instructions; `.data/` — the directory `server.js` actually writes — added to `.gitignore`
+   (only `.local-data/` was ignored).
+
+Still open: the game ships no localization layer (agents/localization.md asks for nine locales); every
+string is inline English in `index.html`/`js/ui.js`. That is a feature project, not a review fix.
+
 ## Resolved defects
 
 All confirmed defects below were re-verified against the current source and fixed on 2026-09-04.

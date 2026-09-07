@@ -2,7 +2,10 @@
 // Precaches the app shell on install; network-first for /api, cache-first for
 // static assets. Registration lives in js/main.js.
 
-const CACHE_VERSION = 'cardmosaic-v1';
+// Bump on every shipped change to js/css/index.html: the fetch handler is
+// cache-first, so a stale cache would otherwise pin returning players to the
+// previous build forever.
+const CACHE_VERSION = 'cardmosaic-v2';
 
 const PRECACHE = [
   'index.html',
@@ -21,6 +24,7 @@ const PRECACHE = [
   'js/ui.js',
   'vendor/three.module.js',
   'starhermit.txt',
+  'favicon.svg',
 ];
 
 self.addEventListener('install', (event) => {

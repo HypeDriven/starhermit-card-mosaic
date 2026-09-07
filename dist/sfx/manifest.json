@@ -1,0 +1,92 @@
+[
+  {
+    "name": "card-select",
+    "seconds": 1,
+    "prompt": "A single playing card being lifted off a felt-covered card table, short soft paper slide with a gentle lift at the end.",
+    "event": "select"
+  },
+  {
+    "name": "card-place",
+    "seconds": 1,
+    "prompt": "A playing card placed firmly down onto a wooden card table, soft paper snap followed by a low felt thud.",
+    "event": "place"
+  },
+  {
+    "name": "card-recall",
+    "seconds": 1,
+    "prompt": "A playing card sliding back across a felt table toward the player's hand, gentle paper swish tapering off.",
+    "event": "recall"
+  },
+  {
+    "name": "card-swap",
+    "seconds": 1,
+    "prompt": "Two playing cards exchanged between hands, a quick double paper flutter with a soft crossing motion.",
+    "event": "swap"
+  },
+  {
+    "name": "card-rotate",
+    "seconds": 1,
+    "prompt": "A playing card twisted a quarter turn between finger and thumb against a table, two light paper flicks.",
+    "event": "rotate"
+  },
+  {
+    "name": "card-lock",
+    "seconds": 1,
+    "prompt": "A small metal latch clicking shut over a card on a board, crisp mechanical snap with a soft bright chime tail.",
+    "event": "lock"
+  },
+  {
+    "name": "invalid-move",
+    "seconds": 1,
+    "prompt": "A dull knuckle knock on a wooden table, short muted double tap signalling a refused move.",
+    "event": "invalid"
+  },
+  {
+    "name": "edge-match",
+    "seconds": 1,
+    "prompt": "A bright small glass bell ting with warm resonance, like a glass mosaic tile settling exactly into place.",
+    "event": "match"
+  },
+  {
+    "name": "mosaic-complete",
+    "seconds": 3,
+    "prompt": "A warm rising cluster of tuned glass chimes resolving into a pleasant major chord, gentle celebratory finish with a soft shimmer tail.",
+    "event": "complete"
+  },
+  {
+    "name": "round-fail",
+    "seconds": 2,
+    "prompt": "Three soft descending wooden marimba notes fading out quietly, gentle disappointment without harshness.",
+    "event": "fail"
+  },
+  {
+    "name": "hint-reveal",
+    "seconds": 2,
+    "prompt": "A soft magical shimmer of light wind chimes with a rising glint, as if a hidden spot on a board lights up.",
+    "event": "hint"
+  },
+  {
+    "name": "achievement-unlock",
+    "seconds": 2,
+    "prompt": "A cheerful ascending four-note glockenspiel fanfare ending on a bright sustained note, small award jingle.",
+    "event": "achievement"
+  },
+  {
+    "name": "pause-toggle",
+    "seconds": 1,
+    "prompt": "Two soft muted music-box plucks, high note then low note, like a small lid gently closing.",
+    "event": "pause"
+  },
+  {
+    "name": "ui-open",
+    "seconds": 1,
+    "prompt": "A soft wooden panel sliding open, gentle airy whoosh ending with a light click.",
+    "event": "uiOpen"
+  },
+  {
+    "name": "ui-close",
+    "seconds": 1,
+    "prompt": "A soft wooden panel sliding closed, gentle hushed whoosh ending with a quiet click.",
+    "event": "uiClose"
+  }
+]

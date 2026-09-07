@@ -69,11 +69,15 @@ function readBody(req) {
 async function readJsonBody(req) {
   const raw = await readBody(req);
   if (!raw) return {};
+  let parsed;
   try {
-    return JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch {
     throw new Error('bad-json');
   }
+  // a literal `null` / scalar body is a malformed request, not a server fault:
+  // hand handlers an empty object so they answer 400 rather than throwing
+  return parsed && typeof parsed === 'object' ? parsed : {};
 }
 
 function safeName(s) {

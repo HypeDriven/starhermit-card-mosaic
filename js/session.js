@@ -325,6 +325,8 @@ export class Session {
       sessionId: this.sessionId,
       commands: this.commands.map((c) => ({ ...c })),
       lessonStep: this.lessonStep ?? null,
+      // assist counters are not derivable from the command log
+      assists: { ...(this._assistsUsed || { hints: 0, undos: 0 }) },
     };
   }
 
@@ -344,6 +346,12 @@ export class Session {
     session._replayCommands(snapshot.commands, mismatches);
     if (mismatches.length > 0) return null; // corrupted snapshot — refuse to resume
     session.lessonStep = snapshot.lessonStep ?? null;
+    if (snapshot.assists && typeof snapshot.assists === 'object') {
+      session._assistsUsed = {
+        hints: Number(snapshot.assists.hints) || 0,
+        undos: Number(snapshot.assists.undos) || 0,
+      };
+    }
     return session;
   }
 }

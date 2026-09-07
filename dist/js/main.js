@@ -243,6 +243,9 @@ class App {
     this.hintData = null;
     this.clockAccum = 0;
     this.clockRunning = false;
+    // match SFX compares against the previous board event of *this* round
+    this._prevMatched = undefined;
+    this._lastWasNewBest = false;
 
     this.audio.setSeed(content.seed);
     this.ui.setTheme(this._themeFor(content), this.settings.graphics.cvd);
@@ -259,6 +262,27 @@ class App {
     saveProgress(this.progress);
     this._telemetry('start', { mode });
     this._transition('active');
+  }
+
+  /**
+   * Persist the live round. The session log alone cannot describe *which*
+   * journey stage / challenge / daily produced it, nor the active tutorial
+   * step or the wall clock, so round context rides along under `meta`.
+   */
+  _saveSnapshot() {
+    if (!this.session) return;
+    saveSnapshot({
+      ...this.session.snapshot(),
+      meta: {
+        stageIndex: this.stageIndex,
+        challengeId: this.challengeId,
+        difficultyId: this.difficultyId,
+        dailyDateKey: this.dailyDateKey,
+        lessonId: this.lesson ? this.lesson.id : null,
+        lessonStepIndex: this.lessonStepIndex,
+        elapsedMs: this.elapsedMs(),
+      },
+    });
   }
 
   _teardownRound() {
@@ -384,7 +408,7 @@ class App {
       this.selectedCell = null;
       this.hintData = null;
       this._checkLessonProgress(cmd.type);
-      saveSnapshot(this.session.snapshot());
+      this._saveSnapshot();
     }
     if (res.terminal) {
       this._transition('resolving');
@@ -511,6 +535,9 @@ class App {
     const newly = [];
     const p = this.progress;
     const done = result.terminalReason === TERMINAL.COMPLETE;
+    // modes without a persisted best (practice, learn, score chase) must not
+    // inherit the previous round's verdict
+    this._lastWasNewBest = false;
 
     if (done) newly.push(...this._unlock('first_completion'));
 
@@ -578,6 +605,8 @@ class App {
       const meta = ACHIEVEMENTS.find((a) => a.key === key);
       this.ui.toast(`Achievement unlocked: ${meta?.name || key}`, 'achievement');
       this.audio.playEvent('achievement');
+      // mirror to the host when hosted; idempotent server-side, best effort
+      this.platform.postAchievement(key).catch(() => {});
       return [key];
     }
     return [];
@@ -713,6 +742,14 @@ class App {
 
     window.addEventListener('error', (e) => this._telemetry('error', { category: String(e.message || 'unknown').slice(0, 40) }));
 
+    // close the host activity so playtime is accurate (spec §"Start and end
+    // launch activity"); pagehide fires on mobile where unload does not
+    window.addEventListener('pagehide', () => {
+      if (this.session && !this.session.result) { this._stopClock(); this._saveSnapshot(); }
+      this._flushTelemetry();
+      this.platform.activityEnd({ build: BUILD_VERSION, mode: this.mode || null });
+    }, { once: true });
+
     // gamepad: translate to synthetic keyboard events the UI already handles
     this._gamepadPrev = {};
     const pad = () => {
@@ -773,9 +810,12 @@ class App {
       onResume: () => { this.ui.closeOverlay(); this.audio.unduck(); this._transition('active'); },
       onPause: () => { if (this.phase === 'active') this._transition('paused'); },
       onLeave: () => {
+        // "Leave" is an interruption, not a concession: the round is stored
+        // live so Resume picks it up exactly where it stopped. Conceding is a
+        // separate, explicitly confirmed action.
         if (this.session && !this.session.result) {
-          this.session.concede(this.elapsedMs());
-          saveSnapshot(this.session.snapshot());
+          this._stopClock();
+          this._saveSnapshot();
         }
         this.ui.closeOverlay();
         this._transition('title');
@@ -794,7 +834,7 @@ class App {
         const r = this.session.undo();
         if (r.ok) {
           this.audio.playEvent('recall');
-          saveSnapshot(this.session.snapshot());
+          this._saveSnapshot();
           this._clearSelection();
         } else {
           this.ui.toast('Undo is not available here.', 'warn');
@@ -977,12 +1017,22 @@ class App {
       return this._transition('title');
     }
     this._teardownRound();
+    const meta = snap.meta || {};
     this.session = session;
     this.mode = session.mode;
-    this.lesson = session.lesson;
-    this.lessonStepIndex = snap.lessonStep ?? 0;
-    this.clockAccum = session.state.elapsedMs;
+    this.stageIndex = meta.stageIndex ?? null;
+    this.challengeId = meta.challengeId ?? null;
+    this.difficultyId = meta.difficultyId ?? null;
+    this.dailyDateKey = meta.dailyDateKey ?? null;
+    this.lesson = meta.lessonId ? (LESSONS.find((l) => l.id === meta.lessonId) || null) : null;
+    session.lesson = this.lesson;
+    this.lessonStepIndex = meta.lessonStepIndex ?? snap.lessonStep ?? 0;
+    this.clockAccum = Math.max(session.state.elapsedMs, meta.elapsedMs || 0);
     this.clockRunning = false;
+    this._prevMatched = undefined;
+    this.selectedTray = null;
+    this.selectedCell = null;
+    this.hintData = null;
     this.audio.setSeed(session.content.seed);
     this.ui.setTheme(this._themeFor(session.content), this.settings.graphics.cvd);
     if (this.renderer) {
@@ -996,7 +1046,12 @@ class App {
 
   async _showBoards() {
     const local = this.boards.entries;
-    const remote = await this.platform.fetchLeaderboard({ board: 'daily', scope: 'global' });
+    // host boards are keyed by contentId (see server.js handleScores), so the
+    // daily board is "daily-<utc date>", never the bare mode name
+    const remote = await this.platform.fetchLeaderboard({
+      board: dailyContent(this.utcToday()).contentId,
+      scope: 'global',
+    });
     this.ui.showScreen('boards', {
       local,
       remote: remote.ok ? remote.entries : null,
