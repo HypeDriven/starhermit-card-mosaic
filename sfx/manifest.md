@@ -19,3 +19,6 @@ Generated with MOSS-SoundEffect v2.0, 48 kHz mono Opus (96 kbps VBR, loudness-no
 | pause-toggle.opus | pause | Two soft muted music-box plucks, high note then low note, like a small lid gently closing. |
 | ui-open.opus | uiOpen | A soft wooden panel sliding open, gentle airy whoosh ending with a light click. |
 | ui-close.opus | uiClose | A soft wooden panel sliding closed, gentle hushed whoosh ending with a quiet click. |
+| card-undo.opus | undo | A playing card sliding backwards across a felt card table and flipping back into a waiting hand, a quick reversed paper swish ending in a soft snap. |
+| time-warning.opus | timeWarning | A small brass desk clock giving three quick soft ticks followed by one muted bell tap, close-miked and intimate in a quiet room. |
+| new-best.opus | newBest | Two bright glass chime notes rising a fifth with a warm resonant shimmer tail, a small triumphant sparkle in a quiet studio. |

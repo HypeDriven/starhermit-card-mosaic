@@ -1,6 +1,7 @@
-// audio.js — procedural WebAudio for Card Mosaic.
-// Everything is synthesized at runtime (oscillator envelopes + filtered noise
-// bursts); no audio assets, no external libs. Musical pitch set is a warm
+// audio.js — WebAudio for Card Mosaic: authored one-shot clips (sfx/*.opus,
+// see sfx/manifest.txt) with a synthesized fallback per event (oscillator
+// envelopes + filtered noise bursts) so every cue plays even before a clip
+// has loaded; music and ambience are always synthesized. No external libs. Musical pitch set is a warm
 // A-minor pentatonic (A3–A5). Importing this module in a non-browser context
 // must not throw: no AudioContext is created until resume() is called, and all
 // browser API access is guarded.
@@ -33,6 +34,9 @@ const SFX_BY_EVENT = {
   achievement: 'achievement-unlock',
   uiOpen: 'ui-open',
   uiClose: 'ui-close',
+  undo: 'card-undo',
+  timeWarning: 'time-warning',
+  newBest: 'new-best',
 };
 
 // Per-event synth recipes. Each is a function of (engine, when, variant) that
@@ -56,6 +60,12 @@ function makeRecipes() {
     pause(e, t, v) { e.blip(t, SCALE[5], 0.12, 'sine', 0.07); e.blip(t + 0.1, SCALE[2], 0.14, 'sine', 0.06); },
     hint(e, t, v) { e.chime(t, [v.pitch(6, 7), v.pitch(9, 10)], 0.3, 0.35, 0.08); },
     achievement(e, t, v) { e.chime(t, [SCALE[5], SCALE[7], SCALE[8], SCALE[10]], 0.6, 0.6, 0.1); },
+    undo(e, t, v) { e.paperTap(t, 0.06, 0.13, 'effects', 1800); e.blip(t + 0.03, v.pitch(5, 7), 0.08, 'triangle', 0.07); },
+    timeWarning(e, t, v) {
+      for (let i = 0; i < 3; i++) e.blip(t + i * 0.14, SCALE[8], 0.05, 'square', 0.05);
+      e.chime(t + 0.5, [SCALE[6]], 0.35, 0.3, 0);
+    },
+    newBest(e, t, v) { e.chime(t, [SCALE[7], SCALE[10]], 0.45, 0.5, 0.12); },
   };
 }
 

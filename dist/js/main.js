@@ -201,6 +201,8 @@ class App {
           stageIndex: this.stageIndex,
         });
         this.audio.playEvent(result.terminalReason === TERMINAL.COMPLETE ? 'complete' : 'fail');
+        if (this._lastWasNewBest) setTimeout(() => this.audio.playEvent('newBest'), 700);
+        if (result.terminalReason === TERMINAL.COMPLETE) this._haptic([30, 60, 30]);
         this._telemetry('round-end', { mode: this.mode, reason: result.terminalReason, score: result.score.total });
         break;
       }
@@ -246,6 +248,7 @@ class App {
     // match SFX compares against the previous board event of *this* round
     this._prevMatched = undefined;
     this._lastWasNewBest = false;
+    this._timeWarned = false;
 
     this.audio.setSeed(content.seed);
     this.ui.setTheme(this._themeFor(content), this.settings.graphics.cvd);
@@ -424,7 +427,7 @@ class App {
   _handleEvents(events, ok) {
     if (!ok) {
       const inv = events.find((e) => e.type === 'invalid');
-      if (inv) this.audio.playEvent('invalid');
+      if (inv) { this.audio.playEvent('invalid'); this._haptic([20, 40, 20]); }
     } else {
       for (const e of events) {
         if (e.type === 'place') this.audio.playEvent('place');
@@ -438,6 +441,15 @@ class App {
     }
     this.ui.playEvents(events, this.session.state);
     if (this.renderer) this.renderer.playEvents(events, this.session.state);
+  }
+
+  /** Optional haptic pulse (Accessibility > Haptic feedback); never throws. */
+  _haptic(pattern) {
+    if (!this.settings.access.haptics) return;
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function' &&
+          navigator.userActivation?.hasBeenActive !== false) navigator.vibrate(pattern);
+    } catch { /* haptics are optional */ }
   }
 
   // -------------------------------------------------------------------------
@@ -702,6 +714,16 @@ class App {
       return;
     }
     this._pushView();
+    // timed rounds: one warning cue when 10 s remain
+    const st = this.session.state;
+    if (st.timeLimitMs !== null && !this._timeWarned) {
+      const left = st.timeLimitMs - this.elapsedMs();
+      if (left > 0 && left <= 10000) {
+        this._timeWarned = true;
+        this.audio.playEvent('timeWarning');
+        this.ui.announce('Ten seconds left.', true);
+      }
+    }
     const now = performance.now();
     if (now - this.lastHeartbeat > 30000) {
       this.lastHeartbeat = now;
@@ -833,7 +855,7 @@ class App {
         if (!this.session) return;
         const r = this.session.undo();
         if (r.ok) {
-          this.audio.playEvent('recall');
+          this.audio.playEvent('undo');
           this._saveSnapshot();
           this._clearSelection();
         } else {
@@ -902,6 +924,8 @@ class App {
         saveSettings(this.settings);
       },
       onCompatDismiss: () => this._transition(this.session ? 'active' : 'title'),
+      onOverlayOpen: (name) => { if (name !== 'pause') this.audio.playEvent('uiOpen'); },
+      onOverlayClose: () => this.audio.playEvent('uiClose'),
       onProfileSave: (name) => { this._profileName = String(name || '').slice(0, 24); },
       onReplayTutorial: () => this.ui.showScreen('lessons', { lessons: LESSONS, progress: this.progress }),
     };
@@ -1030,6 +1054,7 @@ class App {
     this.clockAccum = Math.max(session.state.elapsedMs, meta.elapsedMs || 0);
     this.clockRunning = false;
     this._prevMatched = undefined;
+    this._timeWarned = false;
     this.selectedTray = null;
     this.selectedCell = null;
     this.hintData = null;

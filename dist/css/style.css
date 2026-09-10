@@ -188,6 +188,34 @@ html.high-contrast :focus-visible { outline-width: 4px; }
 .screen-panel h2 { margin-top: 0; }
 
 .title-panel { text-align: center; }
+/* Key art (assets/key-art.webp): decorative, hidden by the img onerror
+   handler if the file is missing so the title screen never shows a broken image */
+.title-art {
+  display: block;
+  width: min(100%, 640px);
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  margin: 0 auto 16px;
+  border-radius: calc(var(--radius) * 1.5);
+  border: 3px solid color-mix(in srgb, var(--t-table) 80%, black);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.results-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  margin: 8px 0 12px;
+  border-radius: calc(var(--radius) * 1.5);
+  border: 2px solid var(--t-card-edge);
+}
+.title-art[hidden], .results-art[hidden] { display: none; }
+@media (max-height: 540px) {
+  .title-art { width: min(100%, 320px); margin-block-end: 8px; }
+  .results-art { max-width: 320px; }
+}
 .title-panel .tagline { margin: 0 auto 24px; color: var(--t-text-soft); }
 .title-secondary, .title-tertiary {
   display: flex;
@@ -733,6 +761,7 @@ html.captions-off .captions { display: none; }
 
 /* Short desktop windows: keep board + tray inside the viewport height */
 @media (min-width: 700px) and (max-height: 820px) {
+  .title-art { width: min(100%, 440px); margin-block-end: 10px; }
   #board-grid { width: min(100%, 60vh, 560px); }
   .tray-slot { width: clamp(44px, 9vh, 72px); }
   #board-container { gap: var(--gap); padding: var(--gap); }

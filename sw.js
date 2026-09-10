@@ -5,7 +5,7 @@
 // Bump on every shipped change to js/css/index.html: the fetch handler is
 // cache-first, so a stale cache would otherwise pin returning players to the
 // previous build forever.
-const CACHE_VERSION = 'cardmosaic-v2';
+const CACHE_VERSION = 'cardmosaic-v3';
 
 const PRECACHE = [
   'index.html',
@@ -25,6 +25,9 @@ const PRECACHE = [
   'vendor/three.module.js',
   'starhermit.txt',
   'favicon.svg',
+  'assets/key-art.webp',
+  'assets/results-complete.webp',
+  'assets/results-over.webp',
 ];
 
 self.addEventListener('install', (event) => {

@@ -88,5 +88,23 @@
     "seconds": 1,
     "prompt": "A soft wooden panel sliding closed, gentle hushed whoosh ending with a quiet click.",
     "event": "uiClose"
+  },
+  {
+    "name": "card-undo",
+    "seconds": 1,
+    "prompt": "A playing card sliding backwards across a felt card table and flipping back into a waiting hand, a quick reversed paper swish ending in a soft snap.",
+    "event": "undo"
+  },
+  {
+    "name": "time-warning",
+    "seconds": 2,
+    "prompt": "A small brass desk clock giving three quick soft ticks followed by one muted bell tap, close-miked and intimate in a quiet room.",
+    "event": "timeWarning"
+  },
+  {
+    "name": "new-best",
+    "seconds": 2,
+    "prompt": "Two bright glass chime notes rising a fifth with a warm resonant shimmer tail, a small triumphant sparkle in a quiet studio.",
+    "event": "newBest"
   }
 ]

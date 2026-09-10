@@ -363,6 +363,7 @@ export class UI {
     if (name === 'help') this._call('onHelpOpen');
     ov.hidden = false;
     ov.classList.add('open');
+    this._call('onOverlayOpen', name);
     const target = ov.querySelector('[data-autofocus]') || ov.querySelector('h2');
     if (target) target.focus({ preventScroll: true });
   }
@@ -375,6 +376,7 @@ export class UI {
     ov.classList.remove('open');
     ov.hidden = true;
     if (top.name === 'help') this._call('onHelpClose');
+    this._call('onOverlayClose', top.name);
 
     const next = this._overlayStack[this._overlayStack.length - 1];
     if (next) {
@@ -860,6 +862,17 @@ export class UI {
       conceded: 'Round conceded',
     };
     this._setText(this.el.resultsHeadline, headlines[r.terminalReason] || 'Round over');
+
+    // Outcome illustration (assets/results-*.webp); decorative, hidden on load failure.
+    const art = this.root.getElementById('results-art');
+    if (art) {
+      if (!art.__wired) {
+        art.__wired = true;
+        art.addEventListener('error', () => { art.hidden = true; });
+      }
+      art.hidden = false;
+      art.src = r.terminalReason === 'complete' ? './assets/results-complete.webp' : './assets/results-over.webp';
+    }
 
     const bits = [];
     if (r.elapsedMs != null) bits.push('Time ' + fmtMs(r.elapsedMs));

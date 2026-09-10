@@ -1,0 +1,22 @@
+# Card Mosaic — SFX manifest (canonical). One clip per line:
+# file | event id (AudioEngine.playEvent name, js/audio.js SFX_BY_EVENT) | description of the sound | usage context
+# Clips: MOSS-SoundEffect v2.0, 48 kHz mono Opus 96 kbps VBR, loudness-normalised (-20 LUFS), 100 steps. All play on the effects bus.
+# Every event also has a synthesized fallback recipe in js/audio.js that plays while a clip is loading or if it fails to load.
+card-select.opus | select | A single playing card lifted off a felt card table, short soft paper slide with a gentle lift at the end | Tray card or placed card selected (main.js _onTray / _onCell)
+card-place.opus | place | A playing card placed firmly onto a wooden card table, soft paper snap then a low felt thud | Rules 'place' event: tray card landed in an empty cell
+card-recall.opus | recall | A playing card sliding back across felt toward the hand, gentle paper swish tapering off | Rules 'recall' event: placed card returned to its tray slot
+card-swap.opus | swap | Two playing cards exchanged between hands, quick double paper flutter with a crossing motion | Rules 'swap' event: two placed cards exchanged (-5 points)
+card-rotate.opus | rotate | A playing card twisted a quarter turn between finger and thumb on a table, two light paper flicks | Rules 'rotateTray' event: tray card quarter-turned (R key / Rotate button)
+card-lock.opus | lock | A small metal latch clicking shut over a card, crisp mechanical snap with a soft bright chime tail | Rules 'lock' event: fully matching card sealed in place (+15)
+invalid-move.opus | invalid | A dull knuckle knock on a wooden table, short muted double tap signalling a refused move | Rules 'invalid' event and local rejections (occupied cell, no tray card selected)
+edge-match.opus | match | A bright small glass bell ting with warm resonance, like a mosaic tile settling exactly into place | Rules 'board' event when the matched-edge count rose this round
+mosaic-complete.opus | complete | A warm rising cluster of tuned glass chimes resolving into a major chord with a soft shimmer tail | Results screen opens with terminalReason 'complete'
+round-fail.opus | fail | Three soft descending wooden marimba notes fading out quietly, gentle disappointment without harshness | Results screen opens with moves-exhausted, time-up or conceded
+hint-reveal.opus | hint | A soft magical shimmer of light wind chimes with a rising glint, a hidden spot lighting up | Hint accepted (H key / Hint button) and a lesson step completed
+achievement-unlock.opus | achievement | A cheerful ascending four-note glockenspiel fanfare ending on a bright sustained note | Achievement newly unlocked (toast + host mirror)
+pause-toggle.opus | pause | Two soft muted music-box plucks, high note then low, like a small lid gently closing | Pause overlay opened (P key, Esc with nothing selected, tab hidden)
+ui-open.opus | uiOpen | A soft wooden panel sliding open, gentle airy whoosh ending with a light click | Settings, help or confirm overlay opened (UI onOverlayOpen; the pause overlay uses 'pause' instead)
+ui-close.opus | uiClose | A soft wooden panel sliding closed, gentle hushed whoosh ending with a quiet click | Any overlay closed, including Resume from pause (UI onOverlayClose)
+card-undo.opus | undo | A playing card sliding backwards across felt and flipping back into a waiting hand, reversed paper swish ending in a soft snap | Undo restored the previous snapshot (U key / Undo button, modes with undoAllowed)
+time-warning.opus | timeWarning | A small brass desk clock giving three quick soft ticks then one muted bell tap, close-miked in a quiet room | Timed rounds only: once, when 10 s remain on the clock (main.js _hudTick); paired with an assertive announcement
+new-best.opus | newBest | Two bright glass chime notes rising a fifth with a warm resonant shimmer tail, a small triumphant sparkle | Results screen, 0.7 s after the completion chime, when the round set a new personal best (journey stage, daily or challenge)
