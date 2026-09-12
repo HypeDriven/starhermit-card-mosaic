@@ -136,6 +136,10 @@ export class Renderer {
     this._scene.fog = new THREE.Fog(this._theme.fog, 8, 26);
     this._camera = new THREE.PerspectiveCamera(FRAMING.fov, 1, 0.1, 100);
     enableAllLayers(this._camera);
+    // The DOM felt panel is the input surface and covers the play area; the
+    // play-layer meshes stay raycastable/animated but are never drawn so the
+    // panel and the scene cannot double-render the same cards.
+    this._camera.layers.disable(LAYER_PLAY);
     this._camPos = new THREE.Vector3(0, 8, 8);       // authored base position
     this._camTarget = new THREE.Vector3(0, 0, 0);    // authored base target
     this._camTargetCur = new THREE.Vector3();

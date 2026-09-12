@@ -461,6 +461,8 @@ html.high-contrast :focus-visible { outline-width: 4px; }
   align-items: center;
   gap: calc(var(--gap) * 1.5);
   max-height: 100%;
+  /* definite width: the board grid sizes from the panel, never the reverse */
+  width: min(100%, 92vmin, 600px);
   padding: calc(var(--gap) * 1.5);
   /* felt panel: covers the 3D gameplay meshes so the DOM mirror board and the
      Three.js scene never double-render the same cards; the studio environment
@@ -474,7 +476,8 @@ html.high-contrast :focus-visible { outline-width: 4px; }
 #board-grid {
   display: grid;
   gap: var(--gap);
-  width: min(100%, 92vmin, 560px);
+  width: 100%;
+  max-width: min(92vmin, 560px);
   aspect-ratio: var(--board-ratio, 1);
 }
 #board-grid.busy { pointer-events: none; }
@@ -762,15 +765,16 @@ html.captions-off .captions { display: none; }
 /* Short desktop windows: keep board + tray inside the viewport height */
 @media (min-width: 700px) and (max-height: 820px) {
   .title-art { width: min(100%, 440px); margin-block-end: 10px; }
-  #board-grid { width: min(100%, 60vh, 560px); }
+  #board-container { gap: var(--gap); padding: var(--gap); width: min(100%, 60vh + 2 * var(--gap), 600px); }
+  #board-grid { max-width: min(60vh, 560px); }
   .tray-slot { width: clamp(44px, 9vh, 72px); }
-  #board-container { gap: var(--gap); padding: var(--gap); }
 }
 
 /* Portrait phones: <700px — top status bar, square board, bottom thumb tray */
 @media (max-width: 699px) {
   #btn-drawer-left { display: inline-flex; align-items: center; }
-  #board-grid { width: min(100%, 96vw, 70vh); }
+  #board-container { width: min(100%, 96vw, 70vh + 3 * var(--gap)); }
+  #board-grid { max-width: min(96vw, 70vh); }
   .rail-left {
     position: fixed;
     inset-inline: 0;
@@ -815,8 +819,8 @@ html.captions-off .captions { display: none; }
   .rail-left.open { transform: none; }
   #btn-drawer-left { display: inline-flex; align-items: center; }
   /* board and tray side by side so both fit the short viewport */
-  #board-container { flex-direction: row; gap: var(--gap); padding: var(--gap); }
-  #board-grid { width: min(100%, 78vh); flex: 0 1 auto; }
+  #board-container { flex-direction: row; gap: var(--gap); padding: var(--gap); width: auto; max-width: 100%; }
+  #board-grid { width: min(68vh, 55vw); max-width: none; flex: 0 0 auto; }
   #tray { max-width: 170px; align-content: center; }
   .tray-slot { width: clamp(40px, 11vh, 64px); }
 }
