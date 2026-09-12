@@ -276,11 +276,13 @@ export class UI {
     if (name === 'boards' && data) this._showBoardsData(data);
     if (name === 'profile') {
       // main.js owns the profile name; progress/achievements are local
-      // storage, which this layer may read for display.
-      this.updateProfile(data || {
+      // storage, which this layer may read for display. onProfileData adds
+      // the hosted account name + cloud sync status when available.
+      const data = Object.assign({
         progress: loadProgress(),
         achievements: loadAchievements(),
-      });
+      }, (this.h.onProfileData && this.h.onProfileData()) || {});
+      this.updateProfile(data);
     }
 
     // Focus: primary control if marked, otherwise the screen heading.
@@ -1024,6 +1026,26 @@ export class UI {
     if (!data) return;
     this._profile = data;
     if (data.name != null) this.el.profileName.value = data.name;
+    if (data.account) {
+      // Hosted: the name comes from the platform account and is read-only;
+      // the free-text field is the offline fallback.
+      this.el.profileName.disabled = true;
+      this.el.profileName.setAttribute('aria-label', 'Display name (platform account)');
+    } else {
+      this.el.profileName.disabled = false;
+    }
+
+    // Cloud sync status line (hosted accounts only).
+    let syncEl = this.el.profileStats.parentElement.querySelector('.profile-sync');
+    if (data.sync) {
+      if (!syncEl) {
+        syncEl = el('p', 'profile-sync dim');
+        this.el.profileStats.parentElement.insertBefore(syncEl, this.el.profileStats);
+      }
+      syncEl.textContent = data.sync;
+    } else if (syncEl) {
+      syncEl.remove();
+    }
 
     const stats = this.el.profileStats;
     stats.textContent = '';

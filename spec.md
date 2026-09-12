@@ -248,18 +248,19 @@ Shipped language: **English only** (`<html lang="en">`). Every string is inline 
 
 ## 12. StarHermit integration
 
-Conventions follow https://wiki.starhermit.com/. `starhermit.txt`: `name=Card Mosaic`, `launch=index.html`, `owner=…`, `server=server.js`, `cover=coverart.png`. `js/platform.js` probes `GET /api/v1/time` (2 s timeout) at boot; when it answers, the game is *hosted* and every call below is live, otherwise each degrades to `{ok:false}` / local behaviour and the game is fully playable offline.
+Conventions follow https://wiki.starhermit.com/. `starhermit.txt`: `name=Card Mosaic`, `launch=index.html`, `owner=…`, `server=server.js`, `cover=coverart.png`. `js/platform.js` reads the launch token (below) and probes `GET /api/v1/time` (2 s timeout) at boot to detect the own-server backend; without a token the game is an offline guest and every call degrades to `{ok:false}` / local behaviour — fully playable offline.
 
 | Feature | Used | How |
 |---|---|---|
-| Launch token / identity | yes | `?launchToken=` or `?token=` read into memory only, sent as `Authorization: Bearer`; the server hashes it into a player key. Never persisted |
+| Launch token / identity | yes | `#game_token=<jwt>` read from the URL fragment (stripped after the read; query `?launchToken=`/`?token=` kept for local dev), decoded for `sub` + `game_scope` (never hard-coded), kept in memory only and sent as `Authorization: Bearer`; re-minted every 45 min via `POST /api/v1/games/{slug}/launch-token` (60 s retry). Hosted mode activates iff a token was read |
+| Profile name | yes | `GET /api/v1/users/{sub}/profile` → nickname (never usernames, never `/api/v1/me`; `Player <id8>` fallback); shown on the profile screen and board rows, which also carry `playerId` so rows resolve to nicknames (server stores `name` + `playerId` on entries) |
 | Server time | yes | RTT-adjusted offset from `/api/v1/time`; drives the daily key, countdown and result timestamps; re-synced on tab return |
-| Leaderboards | yes | `POST /api/v1/scores {board, entry:{result, replay}}` for ranked modes (Daily, Challenge). `server.js` regenerates content from `contentId`, requires `board === contentId`, replays the log with `Session.replay`, re-checks score and terminal reason, rejects `elapsed < 3 s`, `> 10000` moves, or totals above `maxPossibleScore`, rate-limits 6/min/IP, keeps 500 entries sorted by `compareResults`. `GET /api/v1/leaderboards?board=daily-YYYY-MM-DD&scope=` feeds the Score chase screen |
-| Achievements | yes | `POST /api/v1/achievements {key}` on every new unlock; idempotent server-side |
-| Activity / presence | yes | `POST /api/v1/activity` start at boot and end on `pagehide`; `POST /api/v1/presence` every 30 s while a round is active |
+| Leaderboards | yes | `POST /api/v1/scores {board, entry:{result, replay, name, playerId}}` for ranked modes (Daily, Challenge). `server.js` regenerates content from `contentId`, requires `board === contentId`, replays the log with `Session.replay`, re-checks score and terminal reason, rejects `elapsed < 3 s`, `> 10000` moves, or totals above `maxPossibleScore`, rate-limits 6/min/IP, keeps 500 entries sorted by `compareResults`. `GET /api/v1/leaderboards?board=daily-YYYY-MM-DD&scope=` feeds the Score chase screen |
+| Achievements | yes | `POST /api/v1/achievements {key}` on every new unlock; idempotent server-side; also kept local in the save doc |
+| Activity / presence | yes (own backend) | `POST /api/v1/activity` start at boot and end on `pagehide`; `POST /api/v1/presence` every 30 s while a round is active — own-server routes only, silently skipped when the backend is absent |
 | Telemetry | yes, consent-gated | batches of funnel events (`start`, `tutorial-step`, `round-end`, `retry`, `settings-change`, `error` category) to `/api/v1/telemetry`; the server keeps only per-name counters |
 | Daily seed endpoint | server only | `GET /api/v1/daily` returns today's key/contentId/seed |
-| Cloud save | endpoint only | `PUT/GET /api/v1/cloud` (versioned, CRC-checked, 409 on conflict) exists in server and adapter but the client never calls it; progress is local |
+| Cloud save | yes | One zip+base64 slot at `GET/PUT /api/v1/me/cloud-saves/{slug}` (slug from `game_scope`): remote wins on boot (applied before first render), saves mirror after every persist point with a 2 s debounce plus `pagehide`/hidden keepalive flush, and the profile screen shows sync status (offline/saving/synced). localStorage stays the offline cache; the dev server's legacy `/api/v1/cloud` remains for local testing |
 | Friends filtering, realtime rooms, matchmaking, chat, voice, containers | no | Not used; `scope=friends` returns the global board with `friendsFiltered:false` |
 
 ## 13. Technical architecture
@@ -311,7 +312,7 @@ QA bar (agents/qa.md) as checkable statements: the first Learn lesson and Journe
 ## 17. Design intent not yet implemented
 
 - Nine-locale string tables with runtime selection from the host profile / `navigator.languages`.
-- Persisted profile name and cloud-synced progress with 409 conflict resolution.
+- Editable local profile name when hosted (the platform nickname is read-only; only the offline fallback name is editable), and 409-style conflict negotiation for the cloud slot (remote wins on boot today).
 - An "Auto (follow the puzzle)" theme option so Journey chapters and daily themes rotate the table.
 - Friends-filtered boards and a dedicated Score chase ruleset with its own validated seed.
 - Remappable desktop bindings; behaviour for the hold-to-confirm and timing-assist toggles.

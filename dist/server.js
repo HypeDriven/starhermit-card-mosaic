@@ -249,6 +249,8 @@ async function handleScores(req, res) {
   doc.entries.push({
     result: r,
     player: playerKey(req),
+    playerId: typeof entry.playerId === 'string' ? entry.playerId.slice(0, 64) : '',
+    name: typeof entry.name === 'string' ? entry.name.slice(0, 24) : '',
     submittedAt: new Date().toISOString(),
   });
   doc.entries.sort((a, b) => compareResults(a.result, b.result));

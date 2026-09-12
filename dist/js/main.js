@@ -93,6 +93,22 @@ class App {
     await this.platform.init();
     this.ui.setLoading(0.35, 'Studio');
 
+    // Hosted: resolve the account nickname, then prefer the remote save
+    // (cloud slot) over the local cache before anything reads progress.
+    if (this.platform.hosted) {
+      try {
+        await Promise.race([
+          this.platform.fetchProfile(),
+          new Promise((r) => setTimeout(r, 2500)),
+        ]);
+      } catch { /* nickname lands whenever it resolves */ }
+      const remote = await this.platform.loadCloud();
+      if (remote) this._applyCloud(remote);
+      this.platform.onSync(() => {
+        if (this.ui && this.ui._screen === 'profile') this.ui.showScreen('profile');
+      });
+    }
+
     const t = await this.platform.getServerTime();
     this.serverOffset = t.offsetMs;
     this.serverTimeSource = t.source;
@@ -128,6 +144,30 @@ class App {
 
   now() { return Date.now() + this.serverOffset; }
   utcToday() { return dailyKey(new Date(this.now())); }
+
+  /* Cloud save: the local save doc is the offline cache; hosted mirrors it
+   * to the platform slot (zip+base64). Remote wins on boot. */
+  _cloudDoc() {
+    return {
+      v: 1, at: new Date().toISOString(),
+      settings: this.settings, progress: this.progress,
+      achievements: this.achievements, boards: this.boards,
+    };
+  }
+
+  _applyCloud(doc) {
+    if (!doc || typeof doc !== 'object') return;
+    if (doc.settings) { this.settings = doc.settings; saveSettings(this.settings); }
+    if (doc.progress) { this.progress = doc.progress; saveProgress(this.progress); }
+    if (doc.achievements) { this.achievements = doc.achievements; saveAchievements(this.achievements); }
+    if (doc.boards) { this.boards = doc.boards; saveBoards(this.boards); }
+  }
+
+  /** Debounced cloud mirror; call after any persist point when hosted. */
+  _mirrorCloud() {
+    if (!this.platform.hosted) return;
+    this.platform.saveCloud(this._cloudDoc()).catch(() => {});
+  }
 
   // -------------------------------------------------------------------------
   // state machine
@@ -608,12 +648,14 @@ class App {
     }
     if (p.sessionsPlayed >= 50) newly.push(...this._unlock('long_haul'));
     saveProgress(p);
+    this._mirrorCloud();
     return newly;
   }
 
   _unlock(key) {
     if (unlockAchievement(this.achievements, key)) {
       saveAchievements(this.achievements);
+      this._mirrorCloud();
       const meta = ACHIEVEMENTS.find((a) => a.key === key);
       this.ui.toast(`Achievement unlocked: ${meta?.name || key}`, 'achievement');
       this.audio.playEvent('achievement');
@@ -654,10 +696,18 @@ class App {
     list.sort((a, b) => compareResults(a.result, b.result));
     this.boards.entries[boardKey] = list.slice(0, 100);
     saveBoards(this.boards);
-    // ranked modes: submit to host when available
+    this._mirrorCloud();
+    // ranked modes: submit to the own-server backend when available
     if (this.session.ranked) {
       const replay = this.session.serializeReplay();
-      const resp = await this.platform.submitScore({ board: boardKey, entry: { result, replay } });
+      const resp = await this.platform.submitScore({
+        board: boardKey,
+        entry: {
+          result, replay,
+          name: this.profileName() || 'You',
+          playerId: this.platform.userId || undefined,
+        },
+      });
       if (!resp.ok && resp.error !== 'offline') {
         this.ui.toast('Score submission failed: ' + resp.error, 'warn');
       }
@@ -665,7 +715,16 @@ class App {
   }
 
   profileName() {
-    return this._profileName || '';
+    // Hosted: the platform account nickname; offline: the local profile name.
+    const hostedName = this.platform.profile && !this.platform.profile.guest && this.platform.profile.name;
+    return hostedName || this._profileName || '';
+  }
+
+  syncText() {
+    if (!this.platform.hosted) return 'Offline — progress saves on this device.';
+    return this.platform.sync === 'synced' ? 'Cloud save synced.'
+      : this.platform.sync === 'saving' ? 'Saving to cloud…'
+      : 'Cloud sync unavailable — local copy is current.';
   }
 
   // -------------------------------------------------------------------------
@@ -927,6 +986,11 @@ class App {
       onOverlayOpen: (name) => { if (name !== 'pause') this.audio.playEvent('uiOpen'); },
       onOverlayClose: () => this.audio.playEvent('uiClose'),
       onProfileSave: (name) => { this._profileName = String(name || '').slice(0, 24); },
+      onProfileData: () => ({
+        name: this.profileName(),
+        account: !!this.platform.hosted,
+        sync: this.syncText(),
+      }),
       onReplayTutorial: () => this.ui.showScreen('lessons', { lessons: LESSONS, progress: this.progress }),
     };
   }
@@ -1077,9 +1141,20 @@ class App {
       board: dailyContent(this.utcToday()).contentId,
       scope: 'global',
     });
+    let remoteEntries = null;
+    if (remote.ok) {
+      // Resolve account ids to profile nicknames; fall back to the stored
+      // (self-asserted) name.
+      remoteEntries = await Promise.all(remote.entries.map(async (e) => {
+        const name = e.playerId
+          ? await this.platform.profileFor(e.playerId)
+          : (e.name || 'Anonymous');
+        return { ...e, name };
+      }));
+    }
     this.ui.showScreen('boards', {
       local,
-      remote: remote.ok ? remote.entries : null,
+      remote: remoteEntries,
       validated: remote.ok ? remote.validated : false, // unvalidated boards are labeled casual
       dailies: this.progress.dailies,
     });
