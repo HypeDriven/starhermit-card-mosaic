@@ -30,6 +30,8 @@ import { getTheme, themeCssVars, motifColors } from './themes.js';
 import { motifSvg } from './motifs.js';
 import { ACHIEVEMENTS, loadProgress, loadAchievements } from './storage.js';
 import { MODES } from './session.js';
+import { PRESETS, CATEGORIES, SHADOW_MAP, resolve, presetTier, choosePreset } from './gfx.js';
+import { gfxStrings, fmt } from './gfx-strings.js';
 
 const SCREENS = ['loading', 'title', 'modes', 'journey', 'lessons', 'setup',
   'play', 'results', 'help', 'profile', 'boards', 'compat'];
@@ -65,7 +67,6 @@ const MODE_META = {
   score:     { blurb: 'Chase global and friends leaderboards on validated seeds.', duration: '5–10 min' },
 };
 
-const QUALITY_TIERS = ['low', 'medium', 'high'];
 const LONG_PRESS_MS = 550;
 
 function fmtMs(ms) {
@@ -355,7 +356,7 @@ export class UI {
     if (this._overlayStack.length === 1) this._firstInvoker = this.root.activeElement;
 
     const ov = this._overlayEl(name);
-    if (name === 'settings') this._selectSettingsTab((data && data.tab) || 'audio');
+    if (name === 'settings') { this._selectSettingsTab((data && data.tab) || 'audio'); this.refreshGraphics(); }
     if (name === 'confirm') {
       this._confirmAction = (data && data.action) || null;
       this.el.confirmTitle.textContent = (data && data.title) || 'Are you sure?';
@@ -1128,7 +1129,6 @@ export class UI {
     setVal('set-ambience', s.audio.ambience);
     setVal('set-voice', s.audio.voice);
     setChk('set-muted', s.audio.muted);
-    setVal('set-quality', s.graphics.quality);
     setChk('set-cvd', s.graphics.cvd);
     setChk('set-reduced-motion', s.access.reducedMotion);
     setChk('set-high-contrast', s.access.highContrast);
@@ -1140,6 +1140,121 @@ export class UI {
     setChk('set-captions', s.access.captions);
     setChk('set-telemetry', s.privacy && s.privacy.telemetryConsent);
     this._reflecting = false;
+    this.refreshGraphics();
+  }
+
+  // ---- graphics section --------------------------------------------------
+
+  _gfxT() {
+    return gfxStrings(this.root.documentElement.lang || 'en-US');
+  }
+
+  /** Build the per-category selects once (ids gfx-<category>, data-gfx-cat). */
+  _buildGraphicsPanel() {
+    const host = this.root.getElementById('gfx-categories');
+    if (!host || host.childElementCount) return;
+    for (const [cat, tiers] of Object.entries(CATEGORIES)) {
+      const wrap = this.root.createElement('div');
+      wrap.className = 'gfx-cat';
+      const label = this.root.createElement('label');
+      label.htmlFor = 'gfx-' + cat;
+      label.id = 'gfx-' + cat + '-label';
+      const sel = this.root.createElement('select');
+      sel.id = 'gfx-' + cat;
+      sel.dataset.gfxCat = cat;
+      for (const v of ['preset', ...tiers]) {
+        const o = this.root.createElement('option');
+        o.value = v;
+        sel.append(o);
+      }
+      sel.addEventListener('change', () => this._gfxChanged((g) => {
+        if (sel.value === 'preset') delete g[cat];
+        else g[cat] = sel.value;
+      }));
+      wrap.append(label, sel);
+      host.append(wrap);
+    }
+  }
+
+  _gfxChanged(mutator) {
+    if (this._reflecting || !this._settings) return;
+    const g = this._settings.graphics;
+    g.gfx = { ...(g.gfx || { preset: 'auto' }) };
+    mutator(g.gfx);
+    this._call('onSettingsChanged', this._settings);
+  }
+
+  /** Re-label and re-sync the Graphics section from saved + renderer state. */
+  refreshGraphics() {
+    const s = this._settings;
+    if (!s) return;
+    const $ = (id) => this.root.getElementById(id);
+    const T = this._gfxT();
+    const saved = (s.graphics && s.graphics.gfx) || { preset: 'auto' };
+    const info = this._call('onGraphicsInfo') || null;
+    const detected = info ? info.detected : 'balanced';
+    const r = info ? info.resolved : resolve(saved, detected);
+    const was = this._reflecting;
+    this._reflecting = true;
+
+    const html = this.root.documentElement;
+    html.dataset.gfxPreset = r.preset;
+    html.dataset.gfxDetail = r.detail;
+
+    const setText = (id, v) => { const n = $(id); if (n && n.textContent !== v) n.textContent = v; };
+    setText('gfx-quality-label', T.quality);
+    setText('gfx-scale-label', T.renderScale);
+    setText('gfx-effects-label', T.effects);
+    setText('gfx-adaptive-label', T.adaptive);
+    setText('gfx-show-fps-label', T.showFps);
+
+    const q = $('set-quality');
+    if (q) {
+      for (const o of q.options) {
+        o.textContent = o.value === 'auto'
+          ? fmt(T.auto, { tier: T.presets[detected] || detected })
+          : (T.presets[o.value] || o.value);
+      }
+      const want = PRESETS.includes(saved.preset) ? saved.preset : 'auto';
+      if (q.value !== want) q.value = want;
+    }
+    const scale = $('gfx-scale');
+    const pct = Math.round(Math.min(2, Math.max(0.5, Number(saved.render_scale) || 1)) * 100);
+    if (scale && scale.value !== String(pct)) scale.value = pct;
+    setText('gfx-scale-out', pct + '%');
+    for (const cat of Object.keys(CATEGORIES)) {
+      const sel = $('gfx-' + cat);
+      if (!sel) continue;
+      setText('gfx-' + cat + '-label', T.categories[cat] || cat);
+      for (const o of sel.options) {
+        o.textContent = o.value === 'preset'
+          ? fmt(T.fromPreset, { tier: T.tiers[presetTier(r.preset, cat)] || presetTier(r.preset, cat) })
+          : (T.tiers[o.value] || o.value);
+      }
+      const want = CATEGORIES[cat].includes(saved[cat]) ? saved[cat] : 'preset';
+      if (sel.value !== want) sel.value = want;
+    }
+    const ad = $('gfx-adaptive'); if (ad) ad.checked = saved.adaptive !== false;
+    const fps = $('gfx-show-fps'); if (fps) fps.checked = !!saved.show_fps;
+
+    // summary: GPU · cost · pixels
+    const parts = [
+      r.shadows === 'off' ? T.sum.noShadows : fmt(T.sum.shadows, { n: SHADOW_MAP[r.shadows] }),
+      r.ao === 'off' ? null : r.ao === 'high' ? T.sum.aoHigh : T.sum.ao,
+      r.bloom === 'on' ? T.sum.bloom : null,
+      r.grade === 'on' ? T.sum.grade : null,
+      r.antialias === 'off' ? T.sum.noAa : T.tiers[r.antialias],
+    ].filter(Boolean);
+    const summary = [info ? (info.gpu || T.unknownGpu) : null, parts.join(', '),
+      info && info.pixels[0] > 1 ? `${info.pixels[0]}×${info.pixels[1]} px` : null].filter(Boolean).join(' · ');
+    setText('gfx-summary', summary);
+    const note = $('gfx-note');
+    if (note) {
+      const msg = !info ? T.noRenderer : info.postFailed ? T.postFailed : '';
+      note.hidden = !msg;
+      setText('gfx-note', msg);
+    }
+    this._reflecting = was;
   }
 
   _settingsChanged(mutator) {
@@ -1658,12 +1773,24 @@ export class UI {
     range('set-voice', (v) => this._settingsChanged((s) => { s.audio.voice = v; }));
     check('set-muted', (v) => this._settingsChanged((s) => { s.audio.muted = v; }));
 
+    this._buildGraphicsPanel();
     const q = $('set-quality');
     if (q) q.addEventListener('change', () => {
-      if (!QUALITY_TIERS.includes(q.value)) return;
-      this._settingsChanged((s) => { s.graphics.quality = q.value; });
-      this._call('onQualityChange', q.value);
+      // choosing a preset clears the per-effect overrides
+      this._gfxChanged((g) => {
+        const next = choosePreset(g, q.value);
+        for (const k of Object.keys(g)) delete g[k];
+        Object.assign(g, next);
+      });
     });
+    const sc = $('gfx-scale');
+    if (sc) sc.addEventListener('input', () => {
+      const out = $('gfx-scale-out');
+      if (out) out.textContent = sc.value + '%';
+    });
+    if (sc) sc.addEventListener('change', () => this._gfxChanged((g) => { g.render_scale = Number(sc.value) / 100; }));
+    check('gfx-adaptive', (v) => this._gfxChanged((g) => { g.adaptive = v; }));
+    check('gfx-show-fps', (v) => this._gfxChanged((g) => { g.show_fps = v; }));
     check('set-cvd', (v) => {
       this._settingsChanged((s) => { s.graphics.cvd = v; });
       this.applySettings(this._settings);

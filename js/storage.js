@@ -2,6 +2,8 @@
 // Key prefix cardmosaic.v1. Every record is an envelope {v, data, crc};
 // corrupt or version-mismatched entries read as null (never throw).
 
+import { migrateQuality } from './gfx.js';
+
 const PREFIX = 'cardmosaic.v1.';
 const RECORD_VERSION = 1;
 
@@ -75,7 +77,9 @@ function readRecord(key) {
 export const DEFAULT_SETTINGS = Object.freeze({
   version: 1,
   audio: { music: 0.7, effects: 0.9, ambience: 0.5, voice: 0.8, muted: false },
-  graphics: { quality: 'high', theme: 'studio', cvd: false },
+  // gfx: saved Graphics panel state ({preset:'auto'|low|balanced|high|ultra, render_scale,
+  // adaptive, show_fps, <category>: tier}); `quality` is the legacy tier, migrated once.
+  graphics: { quality: 'high', theme: 'studio', cvd: false, gfx: null },
   access: {
     reducedMotion: false, highContrast: false, largeText: false,
     leftHanded: false, holdToConfirm: false, timingAssist: false,
@@ -88,12 +92,19 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
 export function loadSettings() {
   const s = readRecord('settings');
-  if (!s) return structuredClone(DEFAULT_SETTINGS);
+  if (!s) {
+    const fresh = structuredClone(DEFAULT_SETTINGS);
+    fresh.graphics.gfx = { preset: 'auto' };
+    return fresh;
+  }
   // shallow-merge over defaults so new keys appear on old saves
   const merged = structuredClone(DEFAULT_SETTINGS);
   for (const k of Object.keys(merged)) {
     if (s[k] && typeof s[k] === 'object' && !Array.isArray(s[k])) Object.assign(merged[k], s[k]);
     else if (s[k] !== undefined) merged[k] = s[k];
+  }
+  if (!merged.graphics.gfx || typeof merged.graphics.gfx !== 'object') {
+    merged.graphics.gfx = migrateQuality(s.graphics && s.graphics.quality);
   }
   return merged;
 }

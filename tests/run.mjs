@@ -10,6 +10,7 @@ const FILES = [
   'replay.test.mjs',
   'fuzz.test.mjs',
   'golden.test.mjs',
+  'gfx.test.mjs',
 ];
 
 const started = Date.now();

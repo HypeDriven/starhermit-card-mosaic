@@ -42,6 +42,7 @@ const browserNoise = /GL Driver Message|GPU stall due to ReadPixels|Automatic fa
 function wireErrorCollection(page) {
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
+    if (m.type() === 'warning') { errors.push(`console warning: ${m.text()}`); return; }
     if (m.type() !== 'error') return;
     if (m.text().startsWith('Failed to load resource') && (m.location()?.url || '').includes('/api/')) return;
     errors.push(`console: ${m.text()}`);
@@ -178,6 +179,65 @@ async function pauseResume(page, tag) {
   await page.waitForFunction(() => window.__cm?.phase === 'active');
 }
 
+/**
+ * Settings → Graphics through the visible UI: Low → Ultra → High, one
+ * per-effect override, check it is applied (html[data-gfx-preset], the
+ * override select and the summary line), survives a reload, then return to
+ * Auto so the rest of the run stays on the software-GPU Low preset.
+ */
+async function graphicsSettings(page, tag) {
+  const open = async () => {
+    await page.click('#btn-title-settings');
+    await page.waitForSelector('#overlay-settings:not([hidden])');
+    await page.click('#tab-graphics');
+    await page.waitForSelector('#panel-graphics:not([hidden])');
+  };
+  const close = async () => {
+    await page.click('#btn-settings-close');
+    await page.waitForFunction(() => document.getElementById('overlay-settings').hidden);
+  };
+  const preset = () => page.evaluate(() => document.documentElement.dataset.gfxPreset);
+  await open();
+  const autoLabel = await page.textContent('#set-quality option[value="auto"]');
+  if (!/Auto \(detected: Low\)/.test(autoLabel)) throw new Error(`software GPU should auto-detect Low, got "${autoLabel}"`);
+  if (await preset() !== 'low') throw new Error('auto preset on a software GPU should resolve to low');
+  // the panel fits the viewport (it scrolls inside itself when taller)
+  const fit = await page.evaluate(() => {
+    const r = document.querySelector('#overlay-settings .overlay-panel').getBoundingClientRect();
+    return r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5;
+  });
+  if (!fit) throw new Error('settings panel overflows the viewport');
+  await page.selectOption('#set-quality', 'low');
+  await page.waitForFunction(() => document.documentElement.dataset.gfxPreset === 'low');
+  await page.selectOption('#set-quality', 'ultra');
+  await page.waitForFunction(() => document.documentElement.dataset.gfxPreset === 'ultra');
+  await page.waitForTimeout(400); // a few Ultra frames: post chain must build without console noise
+  await page.selectOption('#set-quality', 'high');
+  await page.waitForFunction(() => document.documentElement.dataset.gfxPreset === 'high');
+  const fromPreset = await page.textContent('#gfx-bloom option[value="preset"]');
+  if (!/From preset \(On\)/.test(fromPreset)) throw new Error(`bloom default label wrong: "${fromPreset}"`);
+  await page.locator('#gfx-bloom').scrollIntoViewIfNeeded();
+  await page.selectOption('#gfx-bloom', 'off');
+  await page.waitForFunction(() => !/bloom/.test(document.getElementById('gfx-summary').textContent));
+  const summary = await page.textContent('#gfx-summary');
+  if (!/2048² shadows/.test(summary)) throw new Error(`summary does not reflect High: "${summary}"`);
+  await page.screenshot({ path: `/tmp/card-mosaic-e2e-graphics-${tag}.png` });
+  await close();
+
+  await page.reload({ waitUntil: 'load' });
+  await waitTitle(page);
+  if (await preset() !== 'high') throw new Error('graphics preset did not survive reload');
+  await open();
+  if (await page.inputValue('#set-quality') !== 'high') throw new Error('quality select lost High after reload');
+  if (await page.inputValue('#gfx-bloom') !== 'off') throw new Error('bloom override lost after reload');
+  // choosing a preset clears overrides
+  await page.selectOption('#set-quality', 'auto');
+  await page.waitForFunction(() => document.documentElement.dataset.gfxPreset === 'low');
+  if (await page.inputValue('#gfx-bloom') !== 'preset') throw new Error('choosing a preset did not clear the override');
+  await close();
+  console.log(`  graphics: ${summary}`);
+}
+
 async function expectClean(tag) {
   const bad = errors.filter((e) => !browserNoise.test(e));
   if (bad.length) throw new Error(`${tag} pass had page errors:\n${bad.join('\n')}`);
@@ -206,6 +266,8 @@ try {
       await page.click('#btn-settings-close');
       await page.waitForFunction(() => document.getElementById('overlay-settings').hidden);
     });
+
+    await step('graphics presets + override apply live and persist', () => graphicsSettings(page, tag));
 
     await step('journey stage 1 starts', () => startJourneyStage1(page, tag));
 
@@ -309,6 +371,8 @@ try {
       await waitTitle(page);
       await page.screenshot({ path: `/tmp/card-mosaic-e2e-title-${tag}.png` });
     });
+
+    await step('mobile: graphics presets + override apply live and persist', () => graphicsSettings(page, tag));
 
     await step('mobile: journey stage 1 starts', () => startJourneyStage1(page, tag));
 

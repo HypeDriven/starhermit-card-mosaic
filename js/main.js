@@ -130,6 +130,7 @@ class App {
     }
     this.ui.setLoading(0.8, 'Cards');
 
+    this.ui.refreshGraphics();
     this._bindGlobal();
     this.ui.setLoading(1, 'Ready');
     this._transition('title');
@@ -347,6 +348,7 @@ class App {
   _renderSettings() {
     return {
       quality: this.settings.graphics.quality,
+      gfx: this.settings.graphics.gfx,
       reducedMotion: this.settings.access.reducedMotion,
       cvd: this.settings.graphics.cvd,
       theme: this.settings.graphics.theme === 'auto' ? 'studio' : this.settings.graphics.theme,
@@ -951,7 +953,7 @@ class App {
         saveSettings(settings);
         this.ui.applySettings(settings);
         if (this.renderer) {
-          this.renderer.setQuality(settings.graphics.quality);
+          this.renderer.setGraphics(settings.graphics.gfx);
           this.renderer.setReducedMotion(settings.access.reducedMotion);
           this.renderer.setCvd(settings.graphics.cvd);
           this.renderer.setTheme(settings.graphics.theme === 'auto'
@@ -963,7 +965,11 @@ class App {
         this.audio.setBusVolume('ambience', settings.audio.ambience);
         this.audio.setBusVolume('voice', settings.audio.voice);
         this.audio.setMuted(settings.audio.muted);
+        this.ui.refreshGraphics();
         this._telemetry('settings-change', {});
+      },
+      onGraphicsInfo: () => {
+        try { return this.renderer ? this.renderer.graphicsInfo() : null; } catch { return null; }
       },
       onThemeChange: (themeId) => {
         this.settings.graphics.theme = themeId;
@@ -973,9 +979,12 @@ class App {
         this.ui.setTheme(resolved, this.settings.graphics.cvd);
       },
       onQualityChange: (q) => {
+        // legacy tier hook: map low/medium/high onto a preset with no overrides
         this.settings.graphics.quality = q;
+        this.settings.graphics.gfx = { preset: q === 'medium' ? 'balanced' : q };
         saveSettings(this.settings);
-        this.renderer?.setQuality(q);
+        this.renderer?.setGraphics(this.settings.graphics.gfx);
+        this.ui.refreshGraphics();
       },
       onResultsAction: (action) => this._resultsAction(action),
       onTelemetryConsent: (v) => {

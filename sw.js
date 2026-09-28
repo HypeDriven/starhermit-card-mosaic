@@ -5,13 +5,15 @@
 // Bump on every shipped change to js/css/index.html: the fetch handler is
 // cache-first, so a stale cache would otherwise pin returning players to the
 // previous build forever.
-const CACHE_VERSION = 'cardmosaic-v3';
+const CACHE_VERSION = 'cardmosaic-v4';
 
 const PRECACHE = [
   'index.html',
   'css/style.css',
   'js/main.js',
   'js/audio.js',
+  'js/gfx.js',
+  'js/gfx-strings.js',
   'js/content.js',
   'js/motifs.js',
   'js/platform.js',
@@ -23,6 +25,24 @@ const PRECACHE = [
   'js/themes.js',
   'js/ui.js',
   'vendor/three.module.js',
+  'vendor/addons/environments/RoomEnvironment.js',
+  'vendor/addons/math/SimplexNoise.js',
+  'vendor/addons/postprocessing/EffectComposer.js',
+  'vendor/addons/postprocessing/GTAOPass.js',
+  'vendor/addons/postprocessing/MaskPass.js',
+  'vendor/addons/postprocessing/OutputPass.js',
+  'vendor/addons/postprocessing/Pass.js',
+  'vendor/addons/postprocessing/RenderPass.js',
+  'vendor/addons/postprocessing/SMAAPass.js',
+  'vendor/addons/postprocessing/ShaderPass.js',
+  'vendor/addons/postprocessing/UnrealBloomPass.js',
+  'vendor/addons/shaders/CopyShader.js',
+  'vendor/addons/shaders/FXAAShader.js',
+  'vendor/addons/shaders/GTAOShader.js',
+  'vendor/addons/shaders/LuminosityHighPassShader.js',
+  'vendor/addons/shaders/OutputShader.js',
+  'vendor/addons/shaders/PoissonDenoiseShader.js',
+  'vendor/addons/shaders/SMAAShader.js',
   'starhermit.txt',
   'favicon.svg',
   'assets/key-art.webp',
