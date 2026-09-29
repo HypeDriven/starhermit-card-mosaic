@@ -330,3 +330,7 @@ QA bar (agents/qa.md) as checkable statements: the first Learn lesson and Journe
 - An "Auto (follow the puzzle)" theme option so Journey chapters and daily themes rotate the table.
 - Friends-filtered boards and a dedicated Score chase ruleset with its own validated seed.
 - Remappable desktop bindings; behaviour for the hold-to-confirm and timing-assist toggles.
+
+## Browser interference
+
+`browser-guard.js` (loaded from `index.html`) suppresses browser UI that gets in the way of play: the right-click context menu, the iOS long-press callout, copy / cut / paste, and page text selection. Text fields (inputs, textareas, selects, contenteditable) keep normal selection, context menu and clipboard behaviour.
