@@ -1,192 +1,100 @@
 // platform.js — StarHermit host adapter with graceful offline fallback.
-// Hosted contract (wiki): the platform opens the game as
-// index.html#game_token=<jwt> (optional &session_id=), stripped after the
-// read. The JWT carries sub = user id and game_scope = this game's slug —
-// never hard-coded. Same-origin /api calls send Authorization: Bearer; the
-// token is re-minted every 45 min via POST /api/v1/games/{slug}/launch-token.
-// The display name is the profile nickname from GET /api/v1/users/{sub}/profile
-// — never /api/v1/me, never usernames. Cloud save is ONE zip+base64 slot at
-// GET/PUT /api/v1/me/cloud-saves/{slug} (remote wins on boot; saves debounce
-// ~2 s and flush on pagehide/hidden; localStorage stays the offline cache).
+// Platform plumbing (launch token from #game_token / #access_token, renewal,
+// profile nickname, cloud-save slot game:<slug>, settings KV, controls,
+// invite link, sign-in) goes through window.StarHermit (starhermit-sdk.js,
+// loaded and init()ed from index.html before this module). Without a token
+// the game is an offline guest and nothing here touches the network.
 // Score/leaderboard/achievement/telemetry/activity/presence routes below are
-// the game's OWN server script backend (declared server=server.js); they run
-// on-platform and in local dev, and every method degrades to a structured
-// {ok:false, error} / null result when offline. The launch token is kept in
-// memory only — never written to localStorage.
+// the game's OWN server backend (server.js, local dev); they are only probed
+// when signed in and every method degrades to {ok:false} / null.
 
-const REFRESH_MS = 45 * 60 * 1000; // token lives 60 min; re-mint at 45
-const RETRY_MS = 60 * 1000;
 const SAVE_DEBOUNCE_MS = 2000;
+const sdk = () => globalThis.StarHermit || null;
 
-// Minimal ZIP writer/reader (stored entries only, no compression).
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c >>> 0;
-  }
-  return t;
-})();
-function crc32(bytes) {
-  let c = 0xffffffff;
-  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-function zipStore(name, dataBytes) {
-  const enc = new TextEncoder();
-  const nameB = enc.encode(name);
-  const crc = crc32(dataBytes);
-  const out = [];
-  const u16 = (v) => out.push(v & 0xff, (v >> 8) & 0xff);
-  const u32 = (v) => out.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff);
-  u32(0x04034b50); u16(20); u16(0); u16(0); u16(0); u16(0);
-  u32(crc); u32(dataBytes.length); u32(dataBytes.length);
-  u16(nameB.length); u16(0);
-  const head = new Uint8Array(out);
-  const cd = [];
-  const c16 = (v) => cd.push(v & 0xff, (v >> 8) & 0xff);
-  const c32 = (v) => cd.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff);
-  c32(0x02014b50); c16(20); c16(20); c16(0); c16(0); c16(0); c16(0);
-  c32(crc); c32(dataBytes.length); c32(dataBytes.length);
-  c16(nameB.length); c16(0); c16(0); c16(0); c16(0); c32(0); c32(0);
-  const cdHead = new Uint8Array(cd);
-  const cdOff = head.length + nameB.length + dataBytes.length;
-  const parts = [head, nameB, dataBytes, cdHead, nameB];
-  const eocd = [];
-  const e32 = (v) => eocd.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff);
-  const e16 = (v) => eocd.push(v & 0xff, (v >> 8) & 0xff);
-  e32(0x06054b50); e16(0); e16(0); e16(1); e16(1);
-  e32(cdHead.length + nameB.length); e32(cdOff); e16(0);
-  parts.push(new Uint8Array(eocd));
-  const total = parts.reduce((n, p) => n + p.length, 0);
-  const buf = new Uint8Array(total);
-  let o = 0;
-  for (const p of parts) { buf.set(p, o); o += p.length; }
-  return buf;
-}
-function unzipFirstEntry(zipBytes) {
-  const dv = new DataView(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
-  let off = 0;
-  while (off + 30 <= zipBytes.length && dv.getUint32(off, true) === 0x04034b50) {
-    const method = dv.getUint16(off + 8, true);
-    const size = dv.getUint32(off + 18, true);
-    const nameLen = dv.getUint16(off + 26, true);
-    const extraLen = dv.getUint16(off + 28, true);
-    const dataOff = off + 30 + nameLen + extraLen;
-    if (method !== 0) throw new Error('unsupported zip entry');
-    return zipBytes.slice(dataOff, dataOff + size);
-  }
-  throw new Error('bad zip');
-}
-function bytesToBase64(bytes) {
-  let s = '';
-  for (let i = 0; i < bytes.length; i += 0x8000)
-    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-}
+// Keyboard actions — declared as control.<action> in starhermit.txt.
+export const DEFAULT_BINDINGS = {
+  up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
+  select: ['Enter', 'Space'], cancel: ['Escape'],
+  undo: ['KeyU'], hint: ['KeyH'], rotate: ['KeyR'], lock: ['KeyL'], pause: ['KeyP'],
+};
+// Synthetic events (gamepad) carry only `key`; map those onto actions too.
+const KEY_FALLBACK = {
+  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+  Enter: 'select', ' ': 'select', Escape: 'cancel',
+  u: 'undo', h: 'hint', r: 'rotate', l: 'lock', p: 'pause',
+};
 
 export class Platform {
   constructor() {
-    this.hosted = false;       // a launch token was read
     this.apiBase = '/api/v1';
-    this.launchToken = null;   // memory only — never persisted
-    this.userId = null;        // JWT sub
-    this.scope = null;         // JWT game_scope — the cloud-save gameKey
     this.profile = { name: 'You', guest: true };
     this.sync = 'offline';     // offline | saving | synced (cloud mirror)
+    this.bindings = Object.fromEntries(Object.entries(DEFAULT_BINDINGS).map(([k, v]) => [k, v.slice()]));
+    this._codeMap = null;
     this._syncListeners = [];
-    this._profileNames = {};   // userId -> Promise<string>
+    this._authListeners = [];
     this._timeOffsetMs = 0;
     this._lastHeartbeat = 0;
     this._playing = false;
-    this._refreshTimer = null;
-    this._retryTimer = null;
-    this._saveTimer = null;
-    this._pendingSave = null;
     this._saveWaiters = [];
+    this._serverReachable = false;
   }
 
+  get hosted() { const s = sdk(); return !!(s && s.signedIn); }
   get tokenHosted() { return this.hosted; }
+  get launchToken() { const s = sdk(); return s ? s.token : null; }
+  get userId() { const s = sdk(); return s ? s.userId : null; }
+  get scope() { const s = sdk(); return s ? s.slug : null; }
 
   /* --------------------------- bootstrap ---------------------------- */
 
-  // Fragment first (platform contract); query forms are local-dev only.
-  _readLaunchToken() {
-    if (typeof window === 'undefined' || !window.location) return null;
-    try {
-      const h = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
-      const t = h.get('game_token');
-      if (t) {
-        h.delete('game_token');
-        h.delete('session_id');
-        const rest = h.toString();
-        window.history.replaceState(null, '',
-          window.location.pathname + window.location.search + (rest ? '#' + rest : ''));
-        return t;
-      }
-      const q = new URLSearchParams(window.location.search);
-      return q.get('game_token') || q.get('launchToken') || q.get('token') || null;
-    } catch {
-      return null;
-    }
-  }
-
-  _decodeJwt(t) {
-    try {
-      const seg = String(t).split('.')[1];
-      if (!seg) return null;
-      let b64 = seg.replace(/-/g, '+').replace(/_/g, '/');
-      b64 += '='.repeat((4 - (b64.length % 4)) % 4);
-      const bin = atob(b64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      return JSON.parse(new TextDecoder().decode(bytes));
-    } catch {
-      return null;
-    }
-  }
-
   /**
-   * Read the launch token (fragment, stripped), decode sub/game_scope, start
-   * the 45-min refresh, and probe the own-server time route. Hosted mode
-   * activates iff a token was read.
+   * Hook the SDK's auth/saved events, resolve the nickname, and (signed in
+   * only) probe the own-server time route. Standalone makes no requests.
    */
   async init() {
-    this.launchToken = this._readLaunchToken();
-    if (this.launchToken) {
-      const claims = this._decodeJwt(this.launchToken);
-      if (!claims) this.launchToken = null;
-      else {
-        if (typeof claims.sub === 'string' && claims.sub) this.userId = claims.sub;
-        if (typeof claims.game_scope === 'string' && claims.game_scope) this.scope = claims.game_scope;
-        if (!this.userId || !this.scope) this.launchToken = null;
-      }
+    const s = sdk();
+    if (s) {
+      s.on('saved', (ok) => {
+        this._setSync(ok ? 'synced' : 'offline');
+        const w = this._saveWaiters; this._saveWaiters = [];
+        for (const fn of w) fn(ok ? { ok: true } : { ok: false, error: 'network' });
+      });
+      s.on('auth', (a) => {
+        if (!a.signedIn) { this.profile = { name: 'You', guest: true }; this._setSync('offline'); }
+        for (const fn of this._authListeners) { try { fn(a); } catch { /* listener errors never break the adapter */ } }
+      });
     }
-    this.hosted = !!this.launchToken;
     if (this.hosted) {
-      this._scheduleRefresh();
       try { window.addEventListener('pagehide', () => this._flushSave()); } catch { /* no window events */ }
       document.addEventListener('visibilitychange', () => { if (document.hidden) this._flushSave(); });
       this.fetchProfile(); // nickname lands async via the profile chip
+      const probe = await this._fetch(this.apiBase + '/time', { timeoutMs: 2000 });
+      this._serverReachable = !!(probe && probe.ok && probe.body && typeof probe.body.now === 'number');
     }
-    const probe = await this._fetch(this.apiBase + '/time', { timeoutMs: 2000 });
-    this._serverReachable = !!(probe && probe.ok && probe.body && typeof probe.body.now === 'number');
     return { hosted: this.hosted };
   }
 
+  onAuth(fn) { if (typeof fn === 'function') this._authListeners.push(fn); }
+  canSignIn() { const s = sdk(); return !!(s && s.canSignIn()); }
+  signIn() { const s = sdk(); return !!(s && s.signIn()); }
+  inviteLink() { const s = sdk(); return s && s.signedIn ? s.inviteLink() : null; }
+
+  /** Copy the invite link; resolves true when it reached the clipboard. */
+  async copyInvite() {
+    const link = this.inviteLink();
+    if (!link) return false;
+    try { await navigator.clipboard.writeText(link); return true; } catch { return false; }
+  }
+
   /* --------------------------- identity ----------------------------- */
-  // Nickname via GET /api/v1/users/{id}/profile — the only profile read a
-  // game-scoped token may make. Never /api/v1/me, never usernames.
+  // Nickname via the SDK (GET /api/v1/users/{id}/profile) — never /api/v1/me.
   profileFor(userId) {
+    const s = sdk();
     if (!userId || typeof userId !== 'string') return Promise.resolve('Anonymous');
-    if (this._profileNames[userId]) return this._profileNames[userId];
-    const p = this._fetch(`/api/v1/users/${encodeURIComponent(userId)}/profile`)
-      .then((r) => (r.ok && r.body && typeof r.body.nickname === 'string' && r.body.nickname ? r.body.nickname : null))
-      .then((n) => n || ('Player ' + userId.slice(0, 8)))
-      .catch(() => 'Player ' + userId.slice(0, 8));
-    this._profileNames[userId] = p;
-    return p;
+    if (!s || !s.signedIn) return Promise.resolve('Player ' + userId.slice(0, 6));
+    return s.profile(userId).then((p) => (p && p.displayName) || 'Player ' + userId.slice(0, 6))
+      .catch(() => 'Player ' + userId.slice(0, 6));
   }
 
   async fetchProfile() {
@@ -196,36 +104,49 @@ export class Platform {
     return this.profile;
   }
 
-  /* --------------------------- token refresh ------------------------ */
+  /* --------------------------- settings KV -------------------------- */
 
-  _scheduleRefresh() {
-    if (this._refreshTimer) clearInterval(this._refreshTimer);
-    this._refreshTimer = setInterval(() => this._refreshToken(), REFRESH_MS);
+  /** Platform-stored preferences ({} when signed out). */
+  async getSettings() {
+    const s = sdk();
+    if (!s || !s.signedIn) return {};
+    try { return (await s.getSettings()) || {}; } catch { return {}; }
   }
 
-  _refreshToken() {
-    if (!this.launchToken || !this.scope) return Promise.resolve(false);
-    return this._fetch(`/api/v1/games/${encodeURIComponent(this.scope)}/launch-token`, { method: 'POST', body: {} })
-      .then((res) => {
-        if (res.ok && res.body && typeof res.body.token === 'string' && res.body.token) {
-          this.launchToken = res.body.token;
-          const claims = this._decodeJwt(this.launchToken);
-          if (claims && claims.sub) this.userId = claims.sub;
-          if (claims && claims.game_scope) this.scope = claims.game_scope;
-          return true;
-        }
-        this._retryRefresh();
-        return false;
-      })
-      .catch(() => { this._retryRefresh(); return false; });
+  patchSettings(obj) {
+    const s = sdk();
+    if (!s || !s.signedIn) return Promise.resolve(null);
+    return s.patchSettings(obj).catch(() => null);
   }
 
-  _retryRefresh() {
-    if (this._retryTimer || !this.launchToken) return;
-    this._retryTimer = setTimeout(() => {
-      this._retryTimer = null;
-      this._refreshToken();
-    }, RETRY_MS);
+  /* --------------------------- controls ----------------------------- */
+
+  /** Resolve bindings (platform overrides over defaults). */
+  async loadBindings() {
+    const s = sdk();
+    if (s && s.signedIn) {
+      try { this.bindings = await s.loadBindings(DEFAULT_BINDINGS); } catch { /* keep defaults */ }
+    }
+    this._codeMap = null;
+    return this.bindings;
+  }
+
+  resetControls() {
+    this.bindings = Object.fromEntries(Object.entries(DEFAULT_BINDINGS).map(([k, v]) => [k, v.slice()]));
+    this._codeMap = null;
+    const s = sdk();
+    return s && s.signedIn ? s.resetControls().catch(() => null) : Promise.resolve(null);
+  }
+
+  /** Action name for a keydown event (event.code first, key for synthetic events). */
+  actionFor(e) {
+    if (!this._codeMap) {
+      this._codeMap = {};
+      for (const [a, codes] of Object.entries(this.bindings)) for (const c of codes) this._codeMap[c] = a;
+    }
+    if (e.code) return this._codeMap[e.code] || null;
+    const k = e.key && e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    return KEY_FALLBACK[k] || null;
   }
 
   onSync(fn) {
@@ -307,69 +228,29 @@ export class Platform {
   }
 
   // -------------------------------------------------------------------------
-  // cloud save — the real platform slot (zip+base64, one slot).
+  // cloud save — the platform slot game:<slug> via the SDK (zip+base64).
   // Remote wins on boot (the caller merges); saves debounce and flush on
   // pagehide/hidden; localStorage stays the offline cache.
   // -------------------------------------------------------------------------
 
-  /** GET /api/v1/me/cloud-saves/{slug} → doc or null. */
+  /** The cloud save doc, or null (none / signed out). */
   async loadCloud() {
-    if (!this.hosted || !this.scope) return null;
-    try {
-      const res = await fetch(`${this.apiBase}/me/cloud-saves/${encodeURIComponent(this.scope)}`, {
-        headers: this.launchToken ? { Authorization: `Bearer ${this.launchToken}` } : {},
-      });
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`http-${res.status}`);
-      const buf = new Uint8Array(await res.arrayBuffer());
-      if (!buf.byteLength) return null;
-      return JSON.parse(new TextDecoder().decode(unzipFirstEntry(buf)));
-    } catch {
-      return null;
-    }
+    if (!this.hosted) return null;
+    try { return await sdk().loadJSON(); } catch { return null; }
   }
 
-  /** PUT the save doc to the cloud slot (debounced; resolves on flush). */
+  /** Mirror the save doc to the cloud slot (debounced; resolves on flush). */
   saveCloud(doc) {
-    if (!this.hosted || !this.scope) return Promise.resolve({ ok: false, error: 'offline' });
-    this._pendingSave = doc;
+    if (!this.hosted) return Promise.resolve({ ok: false, error: 'offline' });
     this._setSync('saving');
-    if (this._saveTimer) clearTimeout(this._saveTimer);
-    this._saveTimer = setTimeout(() => this._flushSave(), SAVE_DEBOUNCE_MS);
+    sdk().saveJSON(doc, SAVE_DEBOUNCE_MS);
     return new Promise((resolve) => this._saveWaiters.push(resolve));
   }
 
   _flushSave() {
-    if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
-    const waiters = this._saveWaiters;
-    this._saveWaiters = [];
-    const done = (result) => { for (const w of waiters) w(result); return result; };
-    if (!this.hosted || !this.scope || this._pendingSave == null) {
-      return Promise.resolve(done({ ok: false, error: 'nothing-pending' }));
-    }
-    const doc = this._pendingSave;
-    this._pendingSave = null;
-    let body;
-    try {
-      body = { dataBase64: bytesToBase64(zipStore('save.json', new TextEncoder().encode(JSON.stringify(doc)))) };
-    } catch {
-      return Promise.resolve(done({ ok: false, error: 'encode-failed' }));
-    }
-    return fetch(`${this.apiBase}/me/cloud-saves/${encodeURIComponent(this.scope)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.launchToken}` },
-      body: JSON.stringify(body),
-      keepalive: true,
-    }).then((res) => {
-      if (res.ok) { this._setSync('synced'); return done({ ok: true }); }
-      this._pendingSave = this._pendingSave == null ? doc : this._pendingSave;
-      this._setSync('offline');
-      return done({ ok: false, error: `http-${res.status}` });
-    }).catch(() => {
-      this._pendingSave = this._pendingSave == null ? doc : this._pendingSave;
-      this._setSync('offline');
-      return done({ ok: false, error: 'network' });
-    });
+    const s = sdk();
+    if (!s || !s.signedIn) return Promise.resolve({ ok: false, error: 'nothing-pending' });
+    return s.flushSave(true).then((ok) => (ok ? { ok: true } : { ok: false, error: 'nothing-pending' }));
   }
 
   // -------------------------------------------------------------------------
@@ -432,6 +313,7 @@ export class Platform {
       const headers = {};
       if (body !== null) headers['Content-Type'] = 'application/json';
       if (auth && this.launchToken) headers['Authorization'] = 'Bearer ' + this.launchToken;
+      if (!this.hosted) return { ok: false, status: 0, body: null };
       const resp = await fetch(url, {
         method,
         headers,

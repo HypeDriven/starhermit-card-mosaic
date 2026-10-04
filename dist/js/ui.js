@@ -30,6 +30,9 @@ import { getTheme, themeCssVars, motifColors } from './themes.js';
 import { motifSvg } from './motifs.js';
 import { ACHIEVEMENTS, loadProgress, loadAchievements } from './storage.js';
 import { MODES } from './session.js';
+import { PRESETS, CATEGORIES, SHADOW_MAP, resolve, presetTier, choosePreset } from './gfx.js';
+import { gfxStrings, fmt } from './gfx-strings.js';
+import { platformStrings } from './platform-strings.js';
 
 const SCREENS = ['loading', 'title', 'modes', 'journey', 'lessons', 'setup',
   'play', 'results', 'help', 'profile', 'boards', 'compat'];
@@ -65,7 +68,6 @@ const MODE_META = {
   score:     { blurb: 'Chase global and friends leaderboards on validated seeds.', duration: '5–10 min' },
 };
 
-const QUALITY_TIERS = ['low', 'medium', 'high'];
 const LONG_PRESS_MS = 550;
 
 function fmtMs(ms) {
@@ -304,7 +306,49 @@ export class UI {
       if (data.dailyKey) bits.push('Today’s daily: ' + (data.dailyDone ? 'done' : 'open'));
       this._setText(summary, bits.join(' · '));
     }
+    this.setPlatformButtons(this._call('onPlatformState') || {});
   }
+
+  /** StarHermit buttons: sign-in (platform host, no token) and invite (signed in). */
+  setPlatformButtons({ canSignIn = false, signedIn = false } = {}) {
+    const T = platformStrings(this.root.documentElement.lang);
+    const signIn = this.root.getElementById('btn-title-signin');
+    const invite = this.root.getElementById('btn-title-invite');
+    if (signIn) { signIn.textContent = T.signIn; signIn.hidden = !canSignIn; }
+    if (invite) { invite.textContent = T.invite; invite.hidden = !signedIn; }
+  }
+
+  /** Effective keyboard bindings in Settings → Controls. */
+  renderBindings(bindings) {
+    const body = this.root.getElementById('bindings-body');
+    if (!body || !bindings) return;
+    const label = (c) => ({
+      ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Escape: 'Esc', Space: 'Space', Enter: 'Enter',
+    }[c] || c.replace(/^Key|^Digit/, ''));
+    const rows = [
+      [['left', 'up', 'down', 'right'], 'Move focus among cells and tray cards'],
+      [['select'], 'Select or confirm'],
+      [['cancel'], 'Cancel selection, close dialog, or pause'],
+      [['undo'], 'Undo'], [['hint'], 'Hint'], [['rotate'], 'Rotate selected tray card'],
+      [['lock'], 'Lock selected cell'], [['pause'], 'Pause'],
+    ];
+    body.textContent = '';
+    for (const [actions, text] of rows) {
+      const tr = el('tr');
+      const th = el('th');
+      th.scope = 'row';
+      const codes = actions.flatMap((a) => bindings[a] || []);
+      codes.forEach((c, i) => {
+        if (i && actions.length === 1) th.appendChild(this.root.createTextNode(' / '));
+        th.appendChild(el('kbd', '', label(c)));
+      });
+      tr.appendChild(th);
+      tr.appendChild(el('td', '', text));
+      body.appendChild(tr);
+    }
+  }
+
+  _action(e) { return this._call('onKeyAction', e) || null; }
 
   /** Normalize boards payloads: {boards, scope} or main.js's {local, remote, validated, scope}. */
   _showBoardsData(data) {
@@ -355,7 +399,7 @@ export class UI {
     if (this._overlayStack.length === 1) this._firstInvoker = this.root.activeElement;
 
     const ov = this._overlayEl(name);
-    if (name === 'settings') this._selectSettingsTab((data && data.tab) || 'audio');
+    if (name === 'settings') { this._selectSettingsTab((data && data.tab) || 'audio'); this.refreshGraphics(); }
     if (name === 'confirm') {
       this._confirmAction = (data && data.action) || null;
       this.el.confirmTitle.textContent = (data && data.title) || 'Are you sure?';
@@ -1128,7 +1172,6 @@ export class UI {
     setVal('set-ambience', s.audio.ambience);
     setVal('set-voice', s.audio.voice);
     setChk('set-muted', s.audio.muted);
-    setVal('set-quality', s.graphics.quality);
     setChk('set-cvd', s.graphics.cvd);
     setChk('set-reduced-motion', s.access.reducedMotion);
     setChk('set-high-contrast', s.access.highContrast);
@@ -1140,6 +1183,121 @@ export class UI {
     setChk('set-captions', s.access.captions);
     setChk('set-telemetry', s.privacy && s.privacy.telemetryConsent);
     this._reflecting = false;
+    this.refreshGraphics();
+  }
+
+  // ---- graphics section --------------------------------------------------
+
+  _gfxT() {
+    return gfxStrings(this.root.documentElement.lang || 'en-US');
+  }
+
+  /** Build the per-category selects once (ids gfx-<category>, data-gfx-cat). */
+  _buildGraphicsPanel() {
+    const host = this.root.getElementById('gfx-categories');
+    if (!host || host.childElementCount) return;
+    for (const [cat, tiers] of Object.entries(CATEGORIES)) {
+      const wrap = this.root.createElement('div');
+      wrap.className = 'gfx-cat';
+      const label = this.root.createElement('label');
+      label.htmlFor = 'gfx-' + cat;
+      label.id = 'gfx-' + cat + '-label';
+      const sel = this.root.createElement('select');
+      sel.id = 'gfx-' + cat;
+      sel.dataset.gfxCat = cat;
+      for (const v of ['preset', ...tiers]) {
+        const o = this.root.createElement('option');
+        o.value = v;
+        sel.append(o);
+      }
+      sel.addEventListener('change', () => this._gfxChanged((g) => {
+        if (sel.value === 'preset') delete g[cat];
+        else g[cat] = sel.value;
+      }));
+      wrap.append(label, sel);
+      host.append(wrap);
+    }
+  }
+
+  _gfxChanged(mutator) {
+    if (this._reflecting || !this._settings) return;
+    const g = this._settings.graphics;
+    g.gfx = { ...(g.gfx || { preset: 'auto' }) };
+    mutator(g.gfx);
+    this._call('onSettingsChanged', this._settings);
+  }
+
+  /** Re-label and re-sync the Graphics section from saved + renderer state. */
+  refreshGraphics() {
+    const s = this._settings;
+    if (!s) return;
+    const $ = (id) => this.root.getElementById(id);
+    const T = this._gfxT();
+    const saved = (s.graphics && s.graphics.gfx) || { preset: 'auto' };
+    const info = this._call('onGraphicsInfo') || null;
+    const detected = info ? info.detected : 'balanced';
+    const r = info ? info.resolved : resolve(saved, detected);
+    const was = this._reflecting;
+    this._reflecting = true;
+
+    const html = this.root.documentElement;
+    html.dataset.gfxPreset = r.preset;
+    html.dataset.gfxDetail = r.detail;
+
+    const setText = (id, v) => { const n = $(id); if (n && n.textContent !== v) n.textContent = v; };
+    setText('gfx-quality-label', T.quality);
+    setText('gfx-scale-label', T.renderScale);
+    setText('gfx-effects-label', T.effects);
+    setText('gfx-adaptive-label', T.adaptive);
+    setText('gfx-show-fps-label', T.showFps);
+
+    const q = $('set-quality');
+    if (q) {
+      for (const o of q.options) {
+        o.textContent = o.value === 'auto'
+          ? fmt(T.auto, { tier: T.presets[detected] || detected })
+          : (T.presets[o.value] || o.value);
+      }
+      const want = PRESETS.includes(saved.preset) ? saved.preset : 'auto';
+      if (q.value !== want) q.value = want;
+    }
+    const scale = $('gfx-scale');
+    const pct = Math.round(Math.min(2, Math.max(0.5, Number(saved.render_scale) || 1)) * 100);
+    if (scale && scale.value !== String(pct)) scale.value = pct;
+    setText('gfx-scale-out', pct + '%');
+    for (const cat of Object.keys(CATEGORIES)) {
+      const sel = $('gfx-' + cat);
+      if (!sel) continue;
+      setText('gfx-' + cat + '-label', T.categories[cat] || cat);
+      for (const o of sel.options) {
+        o.textContent = o.value === 'preset'
+          ? fmt(T.fromPreset, { tier: T.tiers[presetTier(r.preset, cat)] || presetTier(r.preset, cat) })
+          : (T.tiers[o.value] || o.value);
+      }
+      const want = CATEGORIES[cat].includes(saved[cat]) ? saved[cat] : 'preset';
+      if (sel.value !== want) sel.value = want;
+    }
+    const ad = $('gfx-adaptive'); if (ad) ad.checked = saved.adaptive !== false;
+    const fps = $('gfx-show-fps'); if (fps) fps.checked = !!saved.show_fps;
+
+    // summary: GPU · cost · pixels
+    const parts = [
+      r.shadows === 'off' ? T.sum.noShadows : fmt(T.sum.shadows, { n: SHADOW_MAP[r.shadows] }),
+      r.ao === 'off' ? null : r.ao === 'high' ? T.sum.aoHigh : T.sum.ao,
+      r.bloom === 'on' ? T.sum.bloom : null,
+      r.grade === 'on' ? T.sum.grade : null,
+      r.antialias === 'off' ? T.sum.noAa : T.tiers[r.antialias],
+    ].filter(Boolean);
+    const summary = [info ? (info.gpu || T.unknownGpu) : null, parts.join(', '),
+      info && info.pixels[0] > 1 ? `${info.pixels[0]}×${info.pixels[1]} px` : null].filter(Boolean).join(' · ');
+    setText('gfx-summary', summary);
+    const note = $('gfx-note');
+    if (note) {
+      const msg = !info ? T.noRenderer : info.postFailed ? T.postFailed : '';
+      note.hidden = !msg;
+      setText('gfx-note', msg);
+    }
+    this._reflecting = was;
   }
 
   _settingsChanged(mutator) {
@@ -1324,6 +1482,8 @@ export class UI {
     on('btn-title-profile', () => this.showScreen('profile'));
     on('btn-title-settings', () => this.openOverlay('settings'));
     on('btn-title-help', () => this.showScreen('help'));
+    on('btn-title-signin', () => this._call('onSignIn'));
+    on('btn-title-invite', () => this._call('onInvite'));
     on('btn-title-resume', () => this._call('onResumeSnapshot'));
     on('btn-title-discard', () => this._call('onDiscardSnapshot'));
 
@@ -1541,10 +1701,11 @@ export class UI {
     const { w, h } = this._vm.state.grid;
     const i = this._cellFocus;
     let next = null;
-    if (e.key === 'ArrowLeft') next = i % w === 0 ? i : i - 1;
-    else if (e.key === 'ArrowRight') next = i % w === w - 1 ? i : i + 1;
-    else if (e.key === 'ArrowUp') next = i - w >= 0 ? i - w : i;
-    else if (e.key === 'ArrowDown') {
+    const a = this._action(e);
+    if (a === 'left') next = i % w === 0 ? i : i - 1;
+    else if (a === 'right') next = i % w === w - 1 ? i : i + 1;
+    else if (a === 'up') next = i - w >= 0 ? i - w : i;
+    else if (a === 'down') {
       next = i + w < w * h ? i + w : null; // fall through to tray from last row
       if (next === null) {
         e.preventDefault();
@@ -1560,14 +1721,15 @@ export class UI {
   _onTrayKey(e) {
     const i = this._trayFocus;
     let next = null;
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      const dir = e.key === 'ArrowRight' ? 1 : -1;
+    const a = this._action(e);
+    if (a === 'left' || a === 'right') {
+      const dir = a === 'right' ? 1 : -1;
       next = i;
       for (let step = 0; step < this._trayEls.length; step++) {
         next = (next + dir + this._trayEls.length) % this._trayEls.length;
         if (!this._trayEls[next].disabled) break;
       }
-    } else if (e.key === 'ArrowUp' && this._cellEls.length) {
+    } else if (a === 'up' && this._cellEls.length) {
       e.preventDefault();
       this._setCellFocus(this._cellFocus);
       this._cellEls[this._cellFocus].focus();
@@ -1658,12 +1820,24 @@ export class UI {
     range('set-voice', (v) => this._settingsChanged((s) => { s.audio.voice = v; }));
     check('set-muted', (v) => this._settingsChanged((s) => { s.audio.muted = v; }));
 
+    this._buildGraphicsPanel();
     const q = $('set-quality');
     if (q) q.addEventListener('change', () => {
-      if (!QUALITY_TIERS.includes(q.value)) return;
-      this._settingsChanged((s) => { s.graphics.quality = q.value; });
-      this._call('onQualityChange', q.value);
+      // choosing a preset clears the per-effect overrides
+      this._gfxChanged((g) => {
+        const next = choosePreset(g, q.value);
+        for (const k of Object.keys(g)) delete g[k];
+        Object.assign(g, next);
+      });
     });
+    const sc = $('gfx-scale');
+    if (sc) sc.addEventListener('input', () => {
+      const out = $('gfx-scale-out');
+      if (out) out.textContent = sc.value + '%';
+    });
+    if (sc) sc.addEventListener('change', () => this._gfxChanged((g) => { g.render_scale = Number(sc.value) / 100; }));
+    check('gfx-adaptive', (v) => this._gfxChanged((g) => { g.adaptive = v; }));
+    check('gfx-show-fps', (v) => this._gfxChanged((g) => { g.show_fps = v; }));
     check('set-cvd', (v) => {
       this._settingsChanged((s) => { s.graphics.cvd = v; });
       this.applySettings(this._settings);
@@ -1685,6 +1859,7 @@ export class UI {
     const reset = $('btn-controls-reset');
     if (reset) reset.addEventListener('click', () => {
       this._settingsChanged((s) => { s.controls.bindings = null; });
+      this._call('onControlsReset');
       this.announce('Keyboard bindings reset to defaults.');
       this.toast('Bindings reset to defaults', 'info');
     });
@@ -1707,12 +1882,27 @@ export class UI {
 
   // ---- global keyboard ----------------------------------------------------
 
+  dispatchGamepadKey(key) {
+    let target = this.root.activeElement;
+    // Directional pad input starts on the board and follows board/tray focus.
+    // Events dispatched at document never reach these elements' key handlers.
+    if (!this._overlayStack.length && this._screen === 'play' &&
+        (key.startsWith('Arrow') || key === 'Enter') &&
+        !target?.closest?.('#board-grid, #tray')) {
+      target = this._cellEls[this._cellFocus];
+      target?.focus();
+    }
+    // Synthetic key events do not perform a button's native Enter activation.
+    if (key === 'Enter' && target?.matches?.('button:not([disabled])')) target.click();
+    else (target || this.root).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  }
+
   _wireKeyboard() {
     this.root.addEventListener('keydown', (e) => {
       // Overlay stack: Tab traps, Esc closes (pause overlay Esc = resume).
       if (this._overlayStack.length) {
         if (e.key === 'Tab') { this._trapTab(e); return; }
-        if (e.key === 'Escape') {
+        if (this._action(e) === 'cancel') {
           e.preventDefault();
           const top = this._overlayStack[this._overlayStack.length - 1];
           if (top.name === 'pause') this._resume();
@@ -1726,21 +1916,26 @@ export class UI {
       const t = e.target;
       if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return;
 
-      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      switch (key) {
-        case 'u': if (this._vm && this._vm.canUndo) this._call('onUndo'); break;
-        case 'h': if (this._vm && this._vm.canHint) this._call('onHint'); break;
-        case 'r':
+      switch (this._action(e)) {
+        case 'select':
+          // Enter/Space activate buttons natively; a rebound key clicks the focused one.
+          if (e.code === 'Enter' || e.code === 'Space' || !e.code) return;
+          if (t && t.matches && t.matches('button:not([disabled])')) t.click();
+          else return;
+          break;
+        case 'undo': if (this._vm && this._vm.canUndo) this._call('onUndo'); break;
+        case 'hint': if (this._vm && this._vm.canHint) this._call('onHint'); break;
+        case 'rotate':
           if (this._sel.tray != null) this._call('onRotate', this._sel.tray);
           break;
-        case 'l':
+        case 'lock':
           if (this._sel.cell != null && this._vm &&
               (this._vm.lockableCells || []).includes(this._sel.cell)) {
             this._call('onLock', this._sel.cell);
           }
           break;
-        case 'p': this._pause(); break;
-        case 'Escape':
+        case 'pause': this._pause(); break;
+        case 'cancel':
           // Cancel selection by re-tapping it: main.js toggles selections
           // off on a repeated tap, keeping both selection models in sync.
           if (this._sel.tray != null) this._call('onTray', this._sel.tray);

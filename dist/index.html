@@ -7,7 +7,10 @@
 <meta name="color-scheme" content="light dark">
 <title>Card Mosaic</title>
 <link rel="stylesheet" href="./css/style.css">
-<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
+<script src="browser-guard.js"></script>
+<script src="starhermit-sdk.js"></script>
+<script>StarHermit.init();</script>
 </head>
 <body>
 <noscript>
@@ -72,6 +75,8 @@
       <div class="title-tertiary">
         <button id="btn-title-settings" class="btn btn-quiet" type="button">Settings</button>
         <button id="btn-title-help" class="btn btn-quiet" type="button">How to play</button>
+        <button id="btn-title-invite" class="btn btn-quiet" type="button" hidden>Invite a friend</button>
+        <button id="btn-title-signin" class="btn" type="button" hidden>Sign in with StarHermit</button>
       </div>
       <p id="title-summary" class="blurb title-summary"></p>
     </div>
@@ -376,13 +381,34 @@
     <div id="panel-graphics" class="tab-panel" role="tabpanel"
          aria-labelledby="tab-graphics" hidden>
       <div class="field">
-        <label for="set-quality">Graphics quality</label>
-        <select id="set-quality">
-          <option value="low">Low — battery saver</option>
-          <option value="medium">Medium</option>
+        <label for="set-quality" id="gfx-quality-label">Quality</label>
+        <select id="set-quality" data-gfx="preset">
+          <option value="auto">Auto</option>
+          <option value="low">Low</option>
+          <option value="balanced">Balanced</option>
           <option value="high">High</option>
+          <option value="ultra">Ultra</option>
         </select>
       </div>
+      <div class="field">
+        <label for="gfx-scale"><span id="gfx-scale-label">Render scale</span>
+          <output id="gfx-scale-out" for="gfx-scale">100%</output></label>
+        <input id="gfx-scale" type="range" min="50" max="200" step="5" value="100" data-gfx="render_scale">
+      </div>
+      <fieldset class="field gfx-effects">
+        <legend id="gfx-effects-label">Effects</legend>
+        <div id="gfx-categories" class="gfx-grid"></div>
+      </fieldset>
+      <div class="field check">
+        <input id="gfx-adaptive" type="checkbox" data-gfx="adaptive">
+        <label for="gfx-adaptive" id="gfx-adaptive-label">Adaptive resolution</label>
+      </div>
+      <div class="field check">
+        <input id="gfx-show-fps" type="checkbox" data-gfx="show_fps">
+        <label for="gfx-show-fps" id="gfx-show-fps-label">Show frame rate</label>
+      </div>
+      <p id="gfx-summary" class="gfx-summary" aria-live="polite"></p>
+      <p id="gfx-note" class="gfx-note" hidden></p>
       <fieldset class="field">
         <legend>Table theme</legend>
         <div id="set-theme-list" class="theme-list"></div>
@@ -397,7 +423,7 @@
          aria-labelledby="tab-controls" hidden>
       <table class="bindings-table">
         <caption>Keyboard bindings</caption>
-        <tbody>
+        <tbody id="bindings-body">
           <tr><th scope="row"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></th><td>Move focus among cells and tray cards</td></tr>
           <tr><th scope="row"><kbd>Enter</kbd> / <kbd>Space</kbd></th><td>Select or confirm</td></tr>
           <tr><th scope="row"><kbd>Esc</kbd></th><td>Cancel selection, close dialog, or pause</td></tr>

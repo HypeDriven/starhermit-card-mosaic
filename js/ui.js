@@ -32,6 +32,7 @@ import { ACHIEVEMENTS, loadProgress, loadAchievements } from './storage.js';
 import { MODES } from './session.js';
 import { PRESETS, CATEGORIES, SHADOW_MAP, resolve, presetTier, choosePreset } from './gfx.js';
 import { gfxStrings, fmt } from './gfx-strings.js';
+import { platformStrings } from './platform-strings.js';
 
 const SCREENS = ['loading', 'title', 'modes', 'journey', 'lessons', 'setup',
   'play', 'results', 'help', 'profile', 'boards', 'compat'];
@@ -305,7 +306,49 @@ export class UI {
       if (data.dailyKey) bits.push('Today’s daily: ' + (data.dailyDone ? 'done' : 'open'));
       this._setText(summary, bits.join(' · '));
     }
+    this.setPlatformButtons(this._call('onPlatformState') || {});
   }
+
+  /** StarHermit buttons: sign-in (platform host, no token) and invite (signed in). */
+  setPlatformButtons({ canSignIn = false, signedIn = false } = {}) {
+    const T = platformStrings(this.root.documentElement.lang);
+    const signIn = this.root.getElementById('btn-title-signin');
+    const invite = this.root.getElementById('btn-title-invite');
+    if (signIn) { signIn.textContent = T.signIn; signIn.hidden = !canSignIn; }
+    if (invite) { invite.textContent = T.invite; invite.hidden = !signedIn; }
+  }
+
+  /** Effective keyboard bindings in Settings → Controls. */
+  renderBindings(bindings) {
+    const body = this.root.getElementById('bindings-body');
+    if (!body || !bindings) return;
+    const label = (c) => ({
+      ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Escape: 'Esc', Space: 'Space', Enter: 'Enter',
+    }[c] || c.replace(/^Key|^Digit/, ''));
+    const rows = [
+      [['left', 'up', 'down', 'right'], 'Move focus among cells and tray cards'],
+      [['select'], 'Select or confirm'],
+      [['cancel'], 'Cancel selection, close dialog, or pause'],
+      [['undo'], 'Undo'], [['hint'], 'Hint'], [['rotate'], 'Rotate selected tray card'],
+      [['lock'], 'Lock selected cell'], [['pause'], 'Pause'],
+    ];
+    body.textContent = '';
+    for (const [actions, text] of rows) {
+      const tr = el('tr');
+      const th = el('th');
+      th.scope = 'row';
+      const codes = actions.flatMap((a) => bindings[a] || []);
+      codes.forEach((c, i) => {
+        if (i && actions.length === 1) th.appendChild(this.root.createTextNode(' / '));
+        th.appendChild(el('kbd', '', label(c)));
+      });
+      tr.appendChild(th);
+      tr.appendChild(el('td', '', text));
+      body.appendChild(tr);
+    }
+  }
+
+  _action(e) { return this._call('onKeyAction', e) || null; }
 
   /** Normalize boards payloads: {boards, scope} or main.js's {local, remote, validated, scope}. */
   _showBoardsData(data) {
@@ -1439,6 +1482,8 @@ export class UI {
     on('btn-title-profile', () => this.showScreen('profile'));
     on('btn-title-settings', () => this.openOverlay('settings'));
     on('btn-title-help', () => this.showScreen('help'));
+    on('btn-title-signin', () => this._call('onSignIn'));
+    on('btn-title-invite', () => this._call('onInvite'));
     on('btn-title-resume', () => this._call('onResumeSnapshot'));
     on('btn-title-discard', () => this._call('onDiscardSnapshot'));
 
@@ -1656,10 +1701,11 @@ export class UI {
     const { w, h } = this._vm.state.grid;
     const i = this._cellFocus;
     let next = null;
-    if (e.key === 'ArrowLeft') next = i % w === 0 ? i : i - 1;
-    else if (e.key === 'ArrowRight') next = i % w === w - 1 ? i : i + 1;
-    else if (e.key === 'ArrowUp') next = i - w >= 0 ? i - w : i;
-    else if (e.key === 'ArrowDown') {
+    const a = this._action(e);
+    if (a === 'left') next = i % w === 0 ? i : i - 1;
+    else if (a === 'right') next = i % w === w - 1 ? i : i + 1;
+    else if (a === 'up') next = i - w >= 0 ? i - w : i;
+    else if (a === 'down') {
       next = i + w < w * h ? i + w : null; // fall through to tray from last row
       if (next === null) {
         e.preventDefault();
@@ -1675,14 +1721,15 @@ export class UI {
   _onTrayKey(e) {
     const i = this._trayFocus;
     let next = null;
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      const dir = e.key === 'ArrowRight' ? 1 : -1;
+    const a = this._action(e);
+    if (a === 'left' || a === 'right') {
+      const dir = a === 'right' ? 1 : -1;
       next = i;
       for (let step = 0; step < this._trayEls.length; step++) {
         next = (next + dir + this._trayEls.length) % this._trayEls.length;
         if (!this._trayEls[next].disabled) break;
       }
-    } else if (e.key === 'ArrowUp' && this._cellEls.length) {
+    } else if (a === 'up' && this._cellEls.length) {
       e.preventDefault();
       this._setCellFocus(this._cellFocus);
       this._cellEls[this._cellFocus].focus();
@@ -1812,6 +1859,7 @@ export class UI {
     const reset = $('btn-controls-reset');
     if (reset) reset.addEventListener('click', () => {
       this._settingsChanged((s) => { s.controls.bindings = null; });
+      this._call('onControlsReset');
       this.announce('Keyboard bindings reset to defaults.');
       this.toast('Bindings reset to defaults', 'info');
     });
@@ -1834,12 +1882,27 @@ export class UI {
 
   // ---- global keyboard ----------------------------------------------------
 
+  dispatchGamepadKey(key) {
+    let target = this.root.activeElement;
+    // Directional pad input starts on the board and follows board/tray focus.
+    // Events dispatched at document never reach these elements' key handlers.
+    if (!this._overlayStack.length && this._screen === 'play' &&
+        (key.startsWith('Arrow') || key === 'Enter') &&
+        !target?.closest?.('#board-grid, #tray')) {
+      target = this._cellEls[this._cellFocus];
+      target?.focus();
+    }
+    // Synthetic key events do not perform a button's native Enter activation.
+    if (key === 'Enter' && target?.matches?.('button:not([disabled])')) target.click();
+    else (target || this.root).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  }
+
   _wireKeyboard() {
     this.root.addEventListener('keydown', (e) => {
       // Overlay stack: Tab traps, Esc closes (pause overlay Esc = resume).
       if (this._overlayStack.length) {
         if (e.key === 'Tab') { this._trapTab(e); return; }
-        if (e.key === 'Escape') {
+        if (this._action(e) === 'cancel') {
           e.preventDefault();
           const top = this._overlayStack[this._overlayStack.length - 1];
           if (top.name === 'pause') this._resume();
@@ -1853,21 +1916,26 @@ export class UI {
       const t = e.target;
       if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return;
 
-      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      switch (key) {
-        case 'u': if (this._vm && this._vm.canUndo) this._call('onUndo'); break;
-        case 'h': if (this._vm && this._vm.canHint) this._call('onHint'); break;
-        case 'r':
+      switch (this._action(e)) {
+        case 'select':
+          // Enter/Space activate buttons natively; a rebound key clicks the focused one.
+          if (e.code === 'Enter' || e.code === 'Space' || !e.code) return;
+          if (t && t.matches && t.matches('button:not([disabled])')) t.click();
+          else return;
+          break;
+        case 'undo': if (this._vm && this._vm.canUndo) this._call('onUndo'); break;
+        case 'hint': if (this._vm && this._vm.canHint) this._call('onHint'); break;
+        case 'rotate':
           if (this._sel.tray != null) this._call('onRotate', this._sel.tray);
           break;
-        case 'l':
+        case 'lock':
           if (this._sel.cell != null && this._vm &&
               (this._vm.lockableCells || []).includes(this._sel.cell)) {
             this._call('onLock', this._sel.cell);
           }
           break;
-        case 'p': this._pause(); break;
-        case 'Escape':
+        case 'pause': this._pause(); break;
+        case 'cancel':
           // Cancel selection by re-tapping it: main.js toggles selections
           // off on a repeated tap, keeping both selection models in sync.
           if (this._sel.tray != null) this._call('onTray', this._sel.tray);

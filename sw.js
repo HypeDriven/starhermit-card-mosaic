@@ -5,7 +5,7 @@
 // Bump on every shipped change to js/css/index.html: the fetch handler is
 // cache-first, so a stale cache would otherwise pin returning players to the
 // previous build forever.
-const CACHE_VERSION = 'cardmosaic-v4';
+const CACHE_VERSION = 'cardmosaic-v5';
 
 const PRECACHE = [
   'index.html',
@@ -17,6 +17,8 @@ const PRECACHE = [
   'js/content.js',
   'js/motifs.js',
   'js/platform.js',
+  'js/platform-strings.js',
+  'starhermit-sdk.js',
   'js/render.js',
   'js/rng.js',
   'js/rules.js',

@@ -11,6 +11,7 @@ const FILES = [
   'fuzz.test.mjs',
   'golden.test.mjs',
   'gfx.test.mjs',
+  'platform.test.mjs',
 ];
 
 const started = Date.now();

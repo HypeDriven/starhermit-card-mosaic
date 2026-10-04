@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 rm -rf dist
 mkdir -p dist
-cp -r index.html css js vendor sfx assets server.js starhermit.txt sw.js dist/
+cp -r index.html css js vendor sfx assets server.js starhermit.txt sw.js browser-guard.js starhermit-sdk.js dist/
 cp favicon.svg icon.png coverart.png LICENSE.md dist/
 echo "dist/ ready:"
 find dist -type f | sort

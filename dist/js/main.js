@@ -18,6 +18,7 @@ import {
   analyticsSessionId,
 } from './storage.js';
 import { Platform } from './platform.js';
+import { platformStrings } from './platform-strings.js';
 import { AudioEngine } from './audio.js';
 
 // Renderer is optional: WebGL may be unavailable (compat mode keeps DOM board).
@@ -33,6 +34,9 @@ const $ = (sel) => document.querySelector(sel);
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
+
+// Preference groups mirrored to the StarHermit settings KV.
+const SYNCED_SETTINGS = ['audio', 'graphics', 'access', 'privacy'];
 
 class App {
   constructor() {
@@ -104,10 +108,27 @@ class App {
       } catch { /* nickname lands whenever it resolves */ }
       const remote = await this.platform.loadCloud();
       if (remote) this._applyCloud(remote);
+      // Platform settings KV wins over the local/cloud copy of preferences.
+      const kv = await this.platform.getSettings();
+      let changed = false;
+      for (const k of SYNCED_SETTINGS) {
+        if (kv[k] && typeof kv[k] === 'object') { Object.assign(this.settings[k], kv[k]); changed = true; }
+      }
+      if (changed) { saveSettings(this.settings); this.ui.applySettings(this.settings); 
+        for (const bus of ['music', 'effects', 'ambience', 'voice']) this.audio.setBusVolume(bus, this.settings.audio[bus]);
+        this.audio.setMuted(this.settings.audio.muted);
+      }
       this.platform.onSync(() => {
         if (this.ui && this.ui._screen === 'profile') this.ui.showScreen('profile');
       });
     }
+
+    await this.platform.loadBindings();
+    this.ui.renderBindings(this.platform.bindings);
+    this.platform.onAuth((a) => {
+      if (!a.signedIn) this.ui.toast(platformStrings(document.documentElement.lang).signedOut, 'info');
+      this.ui.setPlatformButtons(this._platformState());
+    });
 
     const t = await this.platform.getServerTime();
     this.serverOffset = t.offsetMs;
@@ -130,6 +151,7 @@ class App {
     }
     this.ui.setLoading(0.8, 'Cards');
 
+    this.ui.refreshGraphics();
     this._bindGlobal();
     this.ui.setLoading(1, 'Ready');
     this._transition('title');
@@ -161,6 +183,21 @@ class App {
     if (doc.progress) { this.progress = doc.progress; saveProgress(this.progress); }
     if (doc.achievements) { this.achievements = doc.achievements; saveAchievements(this.achievements); }
     if (doc.boards) { this.boards = doc.boards; saveBoards(this.boards); }
+  }
+
+  _platformState() {
+    return { canSignIn: this.platform.canSignIn(), signedIn: this.platform.hosted };
+  }
+
+  /** Mirror player preferences to the platform settings KV (debounced). */
+  _mirrorSettings() {
+    if (!this.platform.hosted) return;
+    clearTimeout(this._settingsKvTimer);
+    this._settingsKvTimer = setTimeout(() => {
+      const patch = {};
+      for (const k of SYNCED_SETTINGS) patch[k] = this.settings[k];
+      this.platform.patchSettings(patch);
+    }, 800);
   }
 
   /** Debounced cloud mirror; call after any persist point when hosted. */
@@ -347,6 +384,7 @@ class App {
   _renderSettings() {
     return {
       quality: this.settings.graphics.quality,
+      gfx: this.settings.graphics.gfx,
       reducedMotion: this.settings.access.reducedMotion,
       cvd: this.settings.graphics.cvd,
       theme: this.settings.graphics.theme === 'auto' ? 'studio' : this.settings.graphics.theme,
@@ -843,7 +881,7 @@ class App {
         for (const [btn, key] of map) {
           const pressed = gp.buttons[btn]?.pressed;
           if (pressed && !this._gamepadPrev[btn]) {
-            document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+            this.ui.dispatchGamepadKey(key);
           }
           this._gamepadPrev[btn] = pressed;
         }
@@ -949,9 +987,10 @@ class App {
       onSettingsChanged: (settings) => {
         this.settings = settings;
         saveSettings(settings);
+        this._mirrorSettings();
         this.ui.applySettings(settings);
         if (this.renderer) {
-          this.renderer.setQuality(settings.graphics.quality);
+          this.renderer.setGraphics(settings.graphics.gfx);
           this.renderer.setReducedMotion(settings.access.reducedMotion);
           this.renderer.setCvd(settings.graphics.cvd);
           this.renderer.setTheme(settings.graphics.theme === 'auto'
@@ -963,24 +1002,34 @@ class App {
         this.audio.setBusVolume('ambience', settings.audio.ambience);
         this.audio.setBusVolume('voice', settings.audio.voice);
         this.audio.setMuted(settings.audio.muted);
+        this.ui.refreshGraphics();
         this._telemetry('settings-change', {});
+      },
+      onGraphicsInfo: () => {
+        try { return this.renderer ? this.renderer.graphicsInfo() : null; } catch { return null; }
       },
       onThemeChange: (themeId) => {
         this.settings.graphics.theme = themeId;
         saveSettings(this.settings);
+        this._mirrorSettings();
         const resolved = themeId === 'auto' ? this._themeFor(this.session?.content) : themeId;
         if (this.renderer) this.renderer.setTheme(resolved);
         this.ui.setTheme(resolved, this.settings.graphics.cvd);
       },
       onQualityChange: (q) => {
+        // legacy tier hook: map low/medium/high onto a preset with no overrides
         this.settings.graphics.quality = q;
+        this.settings.graphics.gfx = { preset: q === 'medium' ? 'balanced' : q };
         saveSettings(this.settings);
-        this.renderer?.setQuality(q);
+        this._mirrorSettings();
+        this.renderer?.setGraphics(this.settings.graphics.gfx);
+        this.ui.refreshGraphics();
       },
       onResultsAction: (action) => this._resultsAction(action),
       onTelemetryConsent: (v) => {
         this.settings.privacy.telemetryConsent = v;
         saveSettings(this.settings);
+        this._mirrorSettings();
       },
       onCompatDismiss: () => this._transition(this.session ? 'active' : 'title'),
       onOverlayOpen: (name) => { if (name !== 'pause') this.audio.playEvent('uiOpen'); },
@@ -991,6 +1040,18 @@ class App {
         account: !!this.platform.hosted,
         sync: this.syncText(),
       }),
+      onPlatformState: () => this._platformState(),
+      onSignIn: () => this.platform.signIn(),
+      onInvite: async () => {
+        const T = platformStrings(document.documentElement.lang);
+        const ok = await this.platform.copyInvite();
+        this.ui.toast(ok ? T.inviteCopied : T.inviteFailed, ok ? 'success' : 'warn');
+      },
+      onKeyAction: (e) => this.platform.actionFor(e),
+      onControlsReset: () => {
+        this.platform.resetControls();
+        this.ui.renderBindings(this.platform.bindings);
+      },
       onReplayTutorial: () => this.ui.showScreen('lessons', { lessons: LESSONS, progress: this.progress }),
     };
   }

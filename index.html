@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="./css/style.css">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
 <script src="browser-guard.js"></script>
+<script src="starhermit-sdk.js"></script>
+<script>StarHermit.init();</script>
 </head>
 <body>
 <noscript>
@@ -73,6 +75,8 @@
       <div class="title-tertiary">
         <button id="btn-title-settings" class="btn btn-quiet" type="button">Settings</button>
         <button id="btn-title-help" class="btn btn-quiet" type="button">How to play</button>
+        <button id="btn-title-invite" class="btn btn-quiet" type="button" hidden>Invite a friend</button>
+        <button id="btn-title-signin" class="btn" type="button" hidden>Sign in with StarHermit</button>
       </div>
       <p id="title-summary" class="blurb title-summary"></p>
     </div>
@@ -419,7 +423,7 @@
          aria-labelledby="tab-controls" hidden>
       <table class="bindings-table">
         <caption>Keyboard bindings</caption>
-        <tbody>
+        <tbody id="bindings-body">
           <tr><th scope="row"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></th><td>Move focus among cells and tray cards</td></tr>
           <tr><th scope="row"><kbd>Enter</kbd> / <kbd>Space</kbd></th><td>Select or confirm</td></tr>
           <tr><th scope="row"><kbd>Esc</kbd></th><td>Cancel selection, close dialog, or pause</td></tr>

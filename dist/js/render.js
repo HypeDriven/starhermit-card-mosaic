@@ -4,6 +4,16 @@
 // skipAnimations(). Imports 'three' via the host page import map (r160).
 
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { detectPreset, resolve, describe, migrateQuality, SHADOW_MAP, PARTICLE_CAP } from './gfx.js';
 import { getTheme, motifColors } from './themes.js';
 import { paintCardFace } from './motifs.js';
 import { analyzeBoard } from './rules.js';
@@ -52,14 +62,38 @@ const TAP_MAX_PX = 6;
 const TAP_MAX_MS = 250;
 
 // vfx budgets
-const PARTICLES_HIGH = 2000;
-const PARTICLES_LOW = 500;
+const PARTICLES_HIGH = PARTICLE_CAP.high;
 const EVENT_GAP = 0.12;      // seconds between queued event animations
 
-const QUALITY = {
-  low:    { pixelRatio: 1,   shadows: false, aa: false, particles: PARTICLES_LOW,  props: false },
-  medium: { pixelRatio: 1.5, shadows: true,  aa: true,  particles: PARTICLES_HIGH, props: true  },
-  high:   { pixelRatio: 2,   shadows: true,  aa: true,  particles: PARTICLES_HIGH, props: true  },
+const DUST_COUNT = 90;         // ambient dust motes drifting in the window light
+const ENV_INTENSITY = 0.45;    // RoomEnvironment reflections on PBR materials
+
+// adaptive resolution
+const ADAPT_FRAMES = 90;
+const ADAPT_SLOW_MS = 26;
+const ADAPT_FAST_MS = 14;
+const ADAPT_MIN = 0.6;
+
+// Colour grade + vignette, applied after OutputPass (display-referred in/out).
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, uAmount: { value: 1.0 }, uVignette: { value: 0.2 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uAmount; uniform float uVignette;
+    varying vec2 vUv;
+    void main() {
+      vec4 src = texture2D(tDiffuse, vUv);
+      vec3 c = clamp(src.rgb, 0.0, 1.0);
+      // gentle S-curve, a touch of saturation, warm highlights / cool shadows
+      vec3 s = mix(c, c * c * (3.0 - 2.0 * c), 0.18);
+      float l = dot(s, vec3(0.299, 0.587, 0.114));
+      s = mix(vec3(l), s, 1.07);
+      s *= mix(vec3(0.97, 0.985, 1.03), vec3(1.035, 1.0, 0.965), smoothstep(0.2, 0.8, l));
+      c = mix(c, s, uAmount);
+      float d = length(vUv - 0.5);
+      c *= 1.0 - uVignette * smoothstep(0.38, 0.85, d);
+      gl_FragColor = vec4(c, src.a);
+    }`,
 };
 
 // ---------------------------------------------------------------------------
@@ -101,22 +135,55 @@ export class Renderer {
     }
   }
 
+  /** Unmasked GPU name from a throwaway context ('' when not exposed). */
+  static _probeGpu() {
+    try {
+      const c = document.createElement('canvas');
+      const gl = c.getContext('webgl2') || c.getContext('webgl');
+      if (!gl) return '';
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
+      const lose = gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+      return name;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static _isMobile() {
+    try {
+      return (navigator.maxTouchPoints || 0) > 0 && window.matchMedia('(pointer: coarse)').matches;
+    } catch (_) {
+      return false;
+    }
+  }
+
   constructor({ container, canvas, onIntent, settings = {} }) {
     if (!container || !canvas) throw new Error('Renderer: container and canvas are required');
     this._container = container;
     this._canvas = canvas;
     this._onIntent = typeof onIntent === 'function' ? onIntent : () => {};
-    this._quality = QUALITY[settings.quality] ? settings.quality : 'medium';
     this._reducedMotion = !!settings.reducedMotion;
     this._cvd = !!settings.cvd;
     this._themeId = settings.theme || 'studio';
     this._theme = getTheme(this._themeId);
 
+    // graphics quality: saved settings resolved against the detected GPU. The
+    // GPU probe uses a throwaway context so canvas antialiasing (fixed at
+    // context creation) can follow the resolved preset.
+    this._gpu = Renderer._probeGpu();
+    this._mobile = Renderer._isMobile();
+    this._detected = detectPreset(this._gpu, { mobile: this._mobile });
+    this._gfxSaved = settings.gfx || migrateQuality(settings.quality);
+    this._q = resolve(this._gfxSaved, this._detected);
+    this._canvasAA = this._q.antialias === 'msaa';
+
     let renderer;
     try {
       renderer = new THREE.WebGLRenderer({
         canvas,
-        antialias: QUALITY[this._quality].aa,
+        antialias: this._canvasAA,
         alpha: false,
         powerPreference: 'high-performance',
       });
@@ -127,15 +194,32 @@ export class Renderer {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = this._theme.exposure;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.shadowMap.enabled = QUALITY[this._quality].shadows;
+    renderer.shadowMap.enabled = SHADOW_MAP[this._q.shadows] > 0;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this._composer = null;
+    this._postKey = null;
+    this._postFailed = false;
+    this._adaptiveScale = 1;
+    this._frames = [];
+    this._frameSum = 0;
+    this._pixelRatio = 1;
+    this._size = [0, 0];
 
     // scene + camera
     this._scene = new THREE.Scene();
-    this._scene.background = new THREE.Color(this._theme.bg);
+    this._bgColor = new THREE.Color(this._theme.bg);
+    this._bgTex = null;
+    this._scene.background = this._bgColor;
+    // image-based lighting: built lazily the first time Detailed needs it
+    this._envTex = null;
+    this._envTried = false;
     this._scene.fog = new THREE.Fog(this._theme.fog, 8, 26);
     this._camera = new THREE.PerspectiveCamera(FRAMING.fov, 1, 0.1, 100);
     enableAllLayers(this._camera);
+    // The DOM felt panel is the input surface and covers the play area; the
+    // play-layer meshes stay raycastable/animated but are never drawn so the
+    // panel and the scene cannot double-render the same cards.
+    this._camera.layers.disable(LAYER_PLAY);
     this._camPos = new THREE.Vector3(0, 8, 8);       // authored base position
     this._camTarget = new THREE.Vector3(0, 0, 0);    // authored base target
     this._camTargetCur = new THREE.Vector3();
@@ -147,9 +231,11 @@ export class Renderer {
     const L = this._theme.light;
     this._keyLight = new THREE.DirectionalLight(L.key, L.keyIntensity);
     this._keyLight.position.set(4.5, 7.5, 3.5);
-    this._keyLight.castShadow = QUALITY[this._quality].shadows;
-    this._keyLight.shadow.mapSize.set(2048, 2048);
+    this._keyLight.castShadow = SHADOW_MAP[this._q.shadows] > 0;
+    const sm = SHADOW_MAP[this._q.shadows] || 1024;
+    this._keyLight.shadow.mapSize.set(sm, sm);
     this._keyLight.shadow.bias = -0.0004;
+    this._keyLight.shadow.normalBias = 0.02;
     enableAllLayers(this._keyLight);
     this._fillLight = new THREE.DirectionalLight(L.fill, L.fillIntensity);
     this._fillLight.position.set(-5, 4, -2.5);
@@ -207,8 +293,9 @@ export class Renderer {
     this._dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -GHOST_H);
 
     // particles (persistent pool)
-    this._pCap = QUALITY[this._quality].particles;
+    this._pCap = PARTICLE_CAP[this._q.particles];
     this._buildParticles();
+    this._buildDust();
 
     // drag ghost (persistent; face texture assigned on drag)
     this._ghost = new THREE.Mesh(
@@ -263,6 +350,8 @@ export class Renderer {
     this._fps = 60;
     this._raf = requestAnimationFrame((t) => this._tick(t));
 
+    this._applyDetail();
+    this._fpsVisible(this._q.showFps);
     this.resize();
   }
 
@@ -358,6 +447,56 @@ export class Renderer {
     this._points.geometry.attributes.color.needsUpdate = true;
   }
 
+  // ambient dust motes drifting through the window light (cosmetic, FX layer)
+  _buildDust() {
+    const n = DUST_COUNT;
+    const rng = createRng('cm-dust');
+    this._dustBase = new Float32Array(n * 4); // x, y, z, phase
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const x = (rng.float() - 0.5) * 3.4, y = 0.3 + rng.float() * 2.6, z = (rng.float() - 0.5) * 2.4;
+      this._dustBase.set([x, y, z, rng.float() * Math.PI * 2], i * 4);
+      pos.set([x, y, z], i * 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+    const c = document.createElement('canvas');
+    c.width = c.height = 32;
+    const ctx = c.getContext('2d');
+    const grd = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    grd.addColorStop(0, 'rgba(255,255,255,1)');
+    grd.addColorStop(0.4, 'rgba(255,255,255,0.35)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, 32, 32);
+    this._dustTex = new THREE.CanvasTexture(c);
+    this._dustTex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.PointsMaterial({
+      size: 0.05, map: this._dustTex, color: this._theme.light.key, transparent: true, opacity: 0.55,
+      depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, fog: false,
+    });
+    this._dust = new THREE.Points(g, m);
+    this._dust.frustumCulled = false;
+    this._dust.layers.set(LAYER_FX);
+    this._dust.visible = false;
+    this._scene.add(this._dust);
+  }
+
+  _stepDust() {
+    if (!this._dust.visible || this._reducedMotion) return;
+    const n = DUST_COUNT, b = this._dustBase, t = this._time;
+    const pos = this._dust.geometry.attributes.position;
+    const a = pos.array;
+    for (let i = 0; i < n; i++) {
+      const ph = b[i * 4 + 3];
+      a[i * 3] = b[i * 4] + Math.sin(t * 0.13 + ph) * 0.25;
+      a[i * 3 + 1] = b[i * 4 + 1] + Math.sin(t * 0.09 + ph * 1.7) * 0.18;
+      a[i * 3 + 2] = b[i * 4 + 2] + Math.cos(t * 0.11 + ph) * 0.2;
+    }
+    pos.needsUpdate = true;
+    if (this._lightPatch) this._lightPatch.material.opacity = 0.085 + Math.sin(t * 0.4) * 0.012 + Math.sin(t * 1.3) * 0.006;
+  }
+
   // -------------------------------------------------------------------------
   // load: full scene rebuild from a content doc
   // -------------------------------------------------------------------------
@@ -392,8 +531,15 @@ export class Renderer {
     this._layout = { w, h, boardW, boardD, trayZ, trayN, tableW, tableD, tableCz };
 
     // -- table slab ----------------------------------------------------------
-    const mTable = track(new THREE.MeshStandardMaterial({ color: this._theme.table, roughness: 0.85 }));
-    const mTableSide = track(new THREE.MeshStandardMaterial({ color: this._theme.tableEdge, roughness: 0.9 }));
+    // detail textures (procedural, deterministic); applied only at detail 'detailed'
+    this._woodTex = track(this._makeWoodTexture());
+    this._feltTex = track(this._makeFeltTexture());
+    const mTable = track(new THREE.MeshPhysicalMaterial({
+      color: this._theme.table, roughness: 0.62, clearcoat: 0.35, clearcoatRoughness: 0.4,
+    }));
+    const mTableSide = track(new THREE.MeshPhysicalMaterial({
+      color: this._theme.tableEdge, roughness: 0.7, clearcoat: 0.25, clearcoatRoughness: 0.5,
+    }));
     const tableGeo = track(new THREE.ExtrudeGeometry(roundedRectShape(tableW, tableD, TABLE_R), {
       depth: TABLE_H - TABLE_BEVEL * 2, bevelEnabled: true,
       bevelThickness: TABLE_BEVEL, bevelSize: TABLE_BEVEL * 0.8, bevelSegments: 2, curveSegments: 8,
@@ -569,11 +715,17 @@ export class Renderer {
 
     // -- studio props (deterministic cosmetic stream) -------------------------
     this._props = new THREE.Group();
-    this._props.visible = QUALITY[this._quality].props;
+    this._props.visible = this._q.detail === 'detailed';
     world.add(this._props);
     this._buildProps(this._props, track);
 
     this._m = { table: mTable, tableSide: mTableSide, felt: mFelt, feltLine: mFeltLine, cell: mCell, tray: mTray, body: mBody, back: mBack, seal: mSeal };
+
+    // dust motes hover over the back-left window patch
+    this._dust.position.set(
+      -(this._layout.tableW / 2 - TABLE_PAD * 0.55) * 0.55, 0,
+      this._layout.tableCz - this._layout.tableD / 2 + TABLE_PAD * 0.5 + 1.1);
+    this._applyDetail();
 
     this._built = true;
     this.resize();
@@ -584,6 +736,124 @@ export class Renderer {
       this._renderer.compile(this._scene, this._camera);
       this._renderer.render(this._scene, this._camera);
     } catch (_) { /* prewarm is best-effort */ }
+  }
+
+  // warm wood grain, near-white so the theme colour still drives the hue
+  _makeWoodTexture() {
+    const W = 512, H = 256;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    const rng = createRng('cm-wood');
+    ctx.fillStyle = '#f2ece4';
+    ctx.fillRect(0, 0, W, H);
+    // long grain lines with gentle waviness
+    for (let i = 0; i < 140; i++) {
+      const y0 = rng.float() * H;
+      const amp = 2 + rng.float() * 6;
+      const freq = 0.004 + rng.float() * 0.01;
+      const ph = rng.float() * 6.28;
+      const shade = Math.floor(170 + rng.float() * 60);
+      ctx.strokeStyle = `rgba(${shade - 30},${shade - 45},${shade - 60},${0.08 + rng.float() * 0.16})`;
+      ctx.lineWidth = 0.6 + rng.float() * 2.2;
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 8) {
+        const y = y0 + Math.sin(x * freq * 6.28 + ph) * amp + Math.sin(x * 0.031 + ph) * 0.8;
+        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // a couple of soft knots
+    for (let k = 0; k < 2; k++) {
+      const kx = rng.float() * W, ky = rng.float() * H;
+      for (let r = 18; r > 2; r -= 3) {
+        ctx.strokeStyle = `rgba(120,90,60,${0.05 + (18 - r) * 0.006})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.ellipse(kx, ky, r * 1.9, r * 0.7, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1 / 4.5, 1 / 2.2);
+    tex.anisotropy = 4;
+    return tex;
+  }
+
+  // fine felt fibre noise (subtle)
+  _makeFeltTexture() {
+    const N = 128;
+    const c = document.createElement('canvas');
+    c.width = c.height = N;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(N, N);
+    const rng = createRng('cm-felt');
+    for (let i = 0; i < N * N; i++) {
+      const v = 226 + Math.floor(rng.float() * 29);
+      img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
+      img.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(4, 4);
+    return tex;
+  }
+
+  // studio backdrop: soft wall gradient with a warm window glow (top left)
+  _paintBackdrop(tex) {
+    const t = this._theme;
+    const c = tex ? tex.image : document.createElement('canvas');
+    c.width = 16; c.height = 256;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    const top = new THREE.Color(t.bg).lerp(new THREE.Color(t.light.key), 0.25);
+    const bottom = new THREE.Color(t.bg).lerp(new THREE.Color(t.tableEdge), 0.28);
+    g.addColorStop(0, '#' + top.getHexString());
+    g.addColorStop(0.55, t.bg);
+    g.addColorStop(1, '#' + bottom.getHexString());
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 16, 256);
+    if (tex) { tex.needsUpdate = true; return tex; }
+    const out = new THREE.CanvasTexture(c);
+    out.colorSpace = THREE.SRGBColorSpace;
+    return out;
+  }
+
+  _applyDetail() {
+    const detailed = this._q.detail === 'detailed';
+    if (this._props) this._props.visible = detailed;
+    if (detailed && !this._bgTex) this._bgTex = this._paintBackdrop(null);
+    if (detailed && !this._envTried) {
+      // a neutral studio room prefiltered once
+      this._envTried = true;
+      try {
+        const pmrem = new THREE.PMREMGenerator(this._renderer);
+        const room = new RoomEnvironment(this._renderer);
+        this._envTex = pmrem.fromScene(room, 0.04).texture;
+        room.dispose();
+        pmrem.dispose();
+      } catch (_) { this._envTex = null; /* IBL is an enhancement */ }
+    }
+    this._scene.background = detailed ? this._bgTex : this._bgColor;
+    this._scene.environment = detailed ? this._envTex : null;
+    if (this._m) {
+      const set = (m, map) => { if (m.map !== map) { m.map = map; m.needsUpdate = true; } };
+      set(this._m.table, detailed ? this._woodTex : null);
+      set(this._m.tableSide, detailed ? this._woodTex : null);
+      set(this._m.felt, detailed ? this._feltTex : null);
+      set(this._m.tray, detailed ? this._feltTex : null);
+    }
+    if (this._world) {
+      this._world.traverse((o) => {
+        const mats = !o.material ? [] : Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) if (m.isMeshStandardMaterial) m.envMapIntensity = ENV_INTENSITY * (m.userData.envBoost || 1);
+      });
+    }
+    this._dust.visible = this._q.ambient === 'on';
   }
 
   _makeCellTexture() {
@@ -619,7 +889,9 @@ export class Renderer {
 
     // mug (left of the board)
     const mug = new THREE.Group();
-    const mugMat = std(t.accentSoft, 0.6);
+    // glazed ceramic: clearcoat catches the room reflections
+    const mugMat = track(new THREE.MeshPhysicalMaterial({ color: t.accentSoft, roughness: 0.45, clearcoat: 0.8, clearcoatRoughness: 0.15 }));
+    mugMat.userData.envBoost = 1.4;
     const cup = new THREE.Mesh(track(new THREE.CylinderGeometry(0.26, 0.22, 0.5, 20)), mugMat);
     cup.position.y = 0.25;
     cup.castShadow = true;
@@ -658,6 +930,38 @@ export class Renderer {
     }
     add(stack, sideX - 0.1 - rng.float() * 0.2, backZ + 0.5 + rng.float() * 0.4, rng.float() * 0.6 - 0.3);
 
+    // brass desk lamp (back left) with a warm emissive bulb that blooms
+    const lamp = new THREE.Group();
+    const brass = track(new THREE.MeshStandardMaterial({ color: '#b8893c', metalness: 0.85, roughness: 0.32 }));
+    brass.userData.envBoost = 2;
+    const base = new THREE.Mesh(track(new THREE.CylinderGeometry(0.3, 0.34, 0.07, 28)), brass);
+    base.position.y = 0.035;
+    base.castShadow = true;
+    const arm1 = new THREE.Mesh(track(new THREE.CylinderGeometry(0.03, 0.03, 1.25, 10)), brass);
+    arm1.position.set(0.18, 0.62, 0);
+    arm1.rotation.z = -0.3;
+    arm1.castShadow = true;
+    const arm2 = new THREE.Mesh(track(new THREE.CylinderGeometry(0.028, 0.028, 0.8, 10)), brass);
+    arm2.position.set(0.62, 1.28, 0);
+    arm2.rotation.z = 1.05;
+    arm2.castShadow = true;
+    const shade = new THREE.Mesh(track(new THREE.ConeGeometry(0.26, 0.36, 28, 1, true)), track(new THREE.MeshStandardMaterial({
+      color: '#b8893c', metalness: 0.85, roughness: 0.3, side: THREE.DoubleSide,
+    })));
+    shade.material.userData.envBoost = 2;
+    shade.position.set(0.98, 1.36, 0);
+    shade.rotation.z = 0.55;
+    shade.castShadow = true;
+    const bulb = new THREE.Mesh(track(new THREE.SphereGeometry(0.1, 16, 12)), track(new THREE.MeshStandardMaterial({
+      color: '#fff2d6', emissive: '#ffd89a', emissiveIntensity: 3.2, roughness: 0.4,
+    })));
+    bulb.position.set(1.05, 1.24, 0);
+    this._lampGlow = new THREE.PointLight(t.light.key, 1.6, 4.5, 2);
+    this._lampGlow.position.set(1.08, 1.1, 0);
+    lamp.add(base, arm1, arm2, shade, bulb, this._lampGlow);
+    add(lamp, -sideX + 0.05, backZ + 0.05, -0.55);
+    this._lampGlow.layers.enableAll();
+
     // window-light patch on the table (soft additive plane, back left)
     const lightPatch = new THREE.Mesh(
       track(new THREE.PlaneGeometry(2.6, 1.8)),
@@ -671,6 +975,7 @@ export class Renderer {
     lightPatch.position.set(-sideX * 0.6, 0.004, backZ + 0.9);
     lightPatch.layers.set(LAYER_ENV);
     group.add(lightPatch);
+    this._lightPatch = lightPatch;
   }
 
   // dispose everything built by load()
@@ -701,6 +1006,10 @@ export class Renderer {
     this._pickList = [];
     this._m = null;
     this._cellTex = null;
+    this._woodTex = null;
+    this._feltTex = null;
+    this._lightPatch = null;
+    this._lampGlow = null;
     this._built = false;
   }
 
@@ -1155,8 +1464,11 @@ export class Renderer {
     this._theme = getTheme(themeId);
     const t = this._theme;
     this._renderer.toneMappingExposure = t.exposure;
-    this._scene.background.set(t.bg);
+    this._bgColor.set(t.bg);
+    if (this._bgTex) this._paintBackdrop(this._bgTex);
     this._scene.fog.color.set(t.fog);
+    this._dust.material.color.set(t.light.key);
+    if (this._lampGlow) this._lampGlow.color.set(t.light.key);
     this._keyLight.color.set(t.light.key);
     this._keyLight.intensity = t.light.keyIntensity;
     this._fillLight.color.set(t.light.fill);
@@ -1199,30 +1511,157 @@ export class Renderer {
     }
   }
 
+  /** Legacy tier API (low/medium/high) → a preset with no overrides. */
   setQuality(tier) {
-    if (this._disposed || !QUALITY[tier]) return;
-    this._quality = tier;
-    const q = QUALITY[tier];
-    // antialiasing is fixed at construction (renderer recreation intentionally
-    // avoided); everything else adjusts at runtime.
-    this._renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
-    this._renderer.shadowMap.enabled = q.shadows;
-    this._keyLight.castShadow = q.shadows;
-    this._keyLight.shadow.mapSize.set(tier === 'high' ? 2048 : 1024, tier === 'high' ? 2048 : 1024);
-    if (this._keyLight.shadow.map) {
-      this._keyLight.shadow.map.dispose();
-      this._keyLight.shadow.map = null;
+    if (this._disposed) return;
+    this.setGraphics(migrateQuality(tier));
+  }
+
+  /**
+   * Apply saved graphics settings live: { preset: 'auto'|low|balanced|high|ultra,
+   * render_scale, adaptive, show_fps, <category>: tier }. Missing keys follow the preset.
+   */
+  setGraphics(saved) {
+    if (this._disposed) return;
+    this._gfxSaved = saved && typeof saved === 'object' ? { ...saved } : { preset: 'auto' };
+    const prev = this._q;
+    const q = this._q = resolve(this._gfxSaved, this._detected);
+    const size = SHADOW_MAP[q.shadows];
+    const shadowsChanged = (size > 0) !== this._renderer.shadowMap.enabled;
+    this._renderer.shadowMap.enabled = size > 0;
+    this._keyLight.castShadow = size > 0;
+    if (size > 0 && this._keyLight.shadow.mapSize.x !== size) {
+      this._keyLight.shadow.mapSize.set(size, size);
+      if (this._keyLight.shadow.map) {
+        this._keyLight.shadow.map.dispose();
+        this._keyLight.shadow.map = null;
+      }
     }
-    this._pCap = q.particles;
-    if (this._props) this._props.visible = q.props;
-    // material recompile for shadow toggle
-    this._scene.traverse((o) => {
-      if (o.material) {
+    this._pCap = PARTICLE_CAP[q.particles];
+    this._applyDetail();
+    if (q.ambient !== 'on' && this._lightPatch) this._lightPatch.material.opacity = 0.09;
+    this._adaptiveScale = 1;
+    this._frames.length = 0;
+    this._frameSum = 0;
+    this._postKey = null; // rebuild the post chain on the next frame
+    this._postFailed = false;
+    this._fpsVisible(q.showFps);
+    // materials pick up shadow-map changes on recompile
+    if (shadowsChanged || !prev) {
+      this._scene.traverse((o) => {
+        if (!o.material) return;
         if (Array.isArray(o.material)) o.material.forEach((mm) => { mm.needsUpdate = true; });
         else o.material.needsUpdate = true;
-      }
-    });
+      });
+    }
     this.resize();
+  }
+
+  /** What the Graphics panel shows: GPU, auto choice, resolved tiers, cost and frame rate. */
+  graphicsInfo() {
+    const px = [Math.round(this._size[0] * this._pixelRatio), Math.round(this._size[1] * this._pixelRatio)];
+    return {
+      gpu: this._gpu || '',
+      detected: this._detected,
+      mobile: this._mobile,
+      resolved: { ...this._q },
+      pixels: px,
+      summary: describe(this._q, px),
+      fps: Math.round(this._fps || 0),
+      adaptiveScale: Math.round(this._adaptiveScale * 100) / 100,
+      postFailed: !!this._postFailed,
+    };
+  }
+
+  _fpsVisible(on) {
+    let el = document.getElementById('fps-meter');
+    if (on && !el) {
+      el = document.createElement('div');
+      el.id = 'fps-meter';
+      el.className = 'fps-meter';
+      el.setAttribute('aria-hidden', 'true');
+      document.body.append(el);
+    }
+    if (el) el.hidden = !on;
+  }
+
+  _wantPost() {
+    const q = this._q;
+    // MSAA without a canvas that was created antialiased goes through a
+    // multisampled composer target instead.
+    return q.post || (q.antialias === 'msaa' && !this._canvasAA);
+  }
+
+  _makePostKey(w, h) {
+    if (this._postFailed || !this._wantPost()) return 'none';
+    const q = this._q;
+    return [q.ao, q.bloom, q.grade, q.antialias, w, h, this._pixelRatio].join('|');
+  }
+
+  _disposePost() {
+    if (!this._composer) return;
+    for (const pass of this._composer.passes) { try { if (pass.dispose) pass.dispose(); } catch (_) { /* ignore */ } }
+    try { this._composer.dispose(); } catch (_) { /* ignore */ }
+    this._composer = null;
+  }
+
+  _buildPost(w, h) {
+    this._disposePost();
+    if (this._postFailed || !this._wantPost()) return;
+    const q = this._q;
+    const pr = this._pixelRatio;
+    const pw = Math.max(1, Math.round(w * pr)), ph = Math.max(1, Math.round(h * pr));
+    try {
+      const target = new THREE.WebGLRenderTarget(pw, ph, {
+        type: THREE.HalfFloatType, samples: q.antialias === 'msaa' ? 4 : 0,
+      });
+      const composer = new EffectComposer(this._renderer, target);
+      composer.setPixelRatio(pr);
+      composer.setSize(w, h);
+      composer.addPass(new RenderPass(this._scene, this._camera));
+      if (q.ao !== 'off') {
+        const ao = new GTAOPass(this._scene, this._camera, pw, ph);
+        ao.output = GTAOPass.OUTPUT.Default;
+        ao.blendIntensity = 0.75;
+        ao.updateGtaoMaterial({ radius: 0.5, distanceExponent: 1.5, thickness: 1.0, scale: 1.0, samples: q.ao === 'high' ? 16 : 8 });
+        ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: q.ao === 'high' ? 6 : 4, rings: 2, samples: q.ao === 'high' ? 16 : 8 });
+        composer.addPass(ao);
+      }
+      if (q.bloom === 'on') {
+        // high threshold: only the lamp bulb, sparkles and bright highlights bloom
+        composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.5, 0.9));
+      }
+      composer.addPass(new OutputPass());
+      if (q.grade === 'on') composer.addPass(new ShaderPass(GradeShader));
+      if (q.antialias === 'smaa') composer.addPass(new SMAAPass(pw, ph));
+      if (q.antialias === 'fxaa') {
+        const fxaa = new ShaderPass(FXAAShader);
+        fxaa.material.uniforms.resolution.value.set(1 / pw, 1 / ph);
+        composer.addPass(fxaa);
+      }
+      this._composer = composer;
+    } catch (_) {
+      // post-processing is an enhancement: render directly and say so in the panel
+      this._postFailed = true;
+      this._disposePost();
+    }
+  }
+
+  // adaptive resolution: step the render scale down when frames are slow, back up when fast
+  _adapt(dtMs) {
+    this._frames.push(dtMs);
+    this._frameSum += dtMs;
+    if (this._frames.length < ADAPT_FRAMES) return;
+    const avg = this._frameSum / this._frames.length;
+    this._frames.length = 0;
+    this._frameSum = 0;
+    const el = document.getElementById('fps-meter');
+    if (el && !el.hidden) el.textContent = `${Math.round(1000 / avg)} fps · ${Math.round(this._pixelRatio * 100) / 100}×`;
+    if (!this._q.adaptive) return;
+    const before = this._adaptiveScale;
+    if (avg > ADAPT_SLOW_MS) this._adaptiveScale = Math.max(ADAPT_MIN, this._adaptiveScale - 0.1);
+    else if (avg < ADAPT_FAST_MS && this._adaptiveScale < 1) this._adaptiveScale = Math.min(1, this._adaptiveScale + 0.05);
+    if (before !== this._adaptiveScale) this.resize();
   }
 
   setReducedMotion(b) {
@@ -1286,7 +1725,11 @@ export class Renderer {
     if (this._disposed) return;
     const w = this._container.clientWidth || 1;
     const h = this._container.clientHeight || 1;
-    this._renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, QUALITY[this._quality].pixelRatio));
+    const q = this._q;
+    const ratio = Math.min(window.devicePixelRatio || 1, q.cap) * q.scale * this._adaptiveScale;
+    this._pixelRatio = Math.round(ratio * 100) / 100;
+    this._size = [w, h];
+    this._renderer.setPixelRatio(this._pixelRatio);
     this._renderer.setSize(w, h, false);
     this._camera.aspect = w / h;
     this._camera.updateProjectionMatrix();
@@ -1399,8 +1842,10 @@ export class Renderer {
     this._time += dt;
     this._fps += (1 / dt - this._fps) * 0.05;
 
+    this._adapt(dt * 1000);
     this._stepAnims(dt);
     this._stepParticles(dt);
+    this._stepDust();
 
     // hint pulse (time-based, no allocations)
     const pulse = 0.55 + 0.4 * Math.sin(this._time * 7);
@@ -1437,6 +1882,20 @@ export class Renderer {
     this._camera.position.add(this._shakeOff);
     this._camera.lookAt(this._camTargetCur);
 
+    const key = this._makePostKey(this._size[0], this._size[1]);
+    if (key !== this._postKey) {
+      this._postKey = key;
+      this._buildPost(this._size[0], this._size[1]);
+    }
+    if (this._composer) {
+      try {
+        this._composer.render(dt);
+        return;
+      } catch (_) {
+        this._postFailed = true;
+        this._disposePost();
+      }
+    }
     this._renderer.render(this._scene, this._camera);
   }
 
@@ -1476,6 +1935,13 @@ export class Renderer {
     this._scene.remove(this._points);
     this._points.geometry.dispose();
     this._points.material.dispose();
+    this._dust.geometry.dispose();
+    this._dust.material.dispose();
+    this._dustTex.dispose();
+    this._disposePost();
+    if (this._envTex) this._envTex.dispose();
+    if (this._bgTex) this._bgTex.dispose();
+    this._fpsVisible(false);
     this._renderer.dispose();
   }
 }
