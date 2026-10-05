@@ -1726,7 +1726,7 @@ export class Renderer {
     const w = this._container.clientWidth || 1;
     const h = this._container.clientHeight || 1;
     const q = this._q;
-    const ratio = Math.min(window.devicePixelRatio || 1, q.cap) * q.scale * this._adaptiveScale;
+    const ratio = Math.min(window.devicePixelRatio || 1, q.cap) * ((window.UIScale && UIScale.value) || 1) * q.scale * this._adaptiveScale;
     this._pixelRatio = Math.round(ratio * 100) / 100;
     this._size = [w, h];
     this._renderer.setPixelRatio(this._pixelRatio);

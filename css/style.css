@@ -36,13 +36,19 @@ body {
   font-family: var(--font);
   background: var(--t-bg);
   color: var(--t-text);
-  min-height: 100dvh;
+  min-height: calc(100dvh / var(--ui-scale, 1));
   display: flex;
   flex-direction: column;
   line-height: 1.45;
 }
 
 p, .blurb, .rule-card p, li, dd, td { max-width: 70ch; }
+
+/* Large screens: the whole page (chrome, screens, play layout with its canvas,
+   overlays, toasts, captions) zooms by --ui-scale (ui-scale.js; exactly 1 up to
+   1600x1000). Viewport units used at that size are divided by it; the canvas
+   pixel ratio is multiplied by UIScale.value. Small-screen breakpoints always run at 1. */
+body { zoom: var(--ui-scale, 1); }
 
 .visually-hidden {
   position: absolute !important;
@@ -462,7 +468,7 @@ html.high-contrast :focus-visible { outline-width: 4px; }
   gap: calc(var(--gap) * 1.5);
   max-height: 100%;
   /* definite width: the board grid sizes from the panel, never the reverse */
-  width: min(100%, 92vmin, 600px);
+  width: min(100%, calc(92vmin / var(--ui-scale, 1)), 600px);
   padding: calc(var(--gap) * 1.5);
   /* felt panel: covers the 3D gameplay meshes so the DOM mirror board and the
      Three.js scene never double-render the same cards; the studio environment
@@ -477,7 +483,7 @@ html.high-contrast :focus-visible { outline-width: 4px; }
   display: grid;
   gap: var(--gap);
   width: 100%;
-  max-width: min(92vmin, 560px);
+  max-width: min(calc(92vmin / var(--ui-scale, 1)), 560px);
   aspect-ratio: var(--board-ratio, 1);
 }
 #board-grid.busy { pointer-events: none; }
@@ -574,7 +580,7 @@ html[dir="rtl"] .cell.link-e { --lw: inset 5px 0 0 0 var(--t-match); --le: 0 0 0
 }
 .tray-slot {
   position: relative;
-  width: clamp(52px, 12vmin, 84px);
+  width: clamp(52px, calc(12vmin / var(--ui-scale, 1)), 84px);
   aspect-ratio: 0.86;
   padding: 0;
   border: 2px dashed color-mix(in srgb, var(--t-text) 30%, transparent);
@@ -673,7 +679,7 @@ html[dir="rtl"] .cell.link-e { --lw: inset 5px 0 0 0 var(--t-match); --le: 0 0 0
   color: var(--t-bg);
   border-radius: 999px;
   padding: 8px 18px;
-  max-width: min(90vw, 70ch);
+  max-width: min(calc(90vw / var(--ui-scale, 1)), 70ch);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
   cursor: pointer;
 }
@@ -698,7 +704,7 @@ body.in-play #footer { display: none; } /* maximize playfield room */
   bottom: calc(24px + env(safe-area-inset-bottom));
   margin: 0 auto;
   width: fit-content;
-  max-width: min(90vw, 70ch);
+  max-width: min(calc(90vw / var(--ui-scale, 1)), 70ch);
   background: rgba(0, 0, 0, 0.75);
   color: #fff;
   padding: 4px 14px;
