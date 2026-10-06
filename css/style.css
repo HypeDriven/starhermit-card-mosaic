@@ -673,6 +673,8 @@ html[dir="rtl"] .cell.link-e { --lw: inset 5px 0 0 0 var(--t-match); --le: 0 0 0
   z-index: 60;
   pointer-events: none;
 }
+/* over the results screen toasts dock at the top (over the status bar), clear of the heading and buttons */
+body:has(#screen-results.active) #toasts { top: calc(4px + env(safe-area-inset-top)); bottom: auto; }
 .toast {
   pointer-events: auto;
   background: var(--t-text);

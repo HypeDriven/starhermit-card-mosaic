@@ -274,6 +274,9 @@ export class UI {
     if (name === 'lessons' && data && data.progress) this._lessonProgress = data.progress;
     if (name === 'lessons') this._buildLessonList();
     if (name === 'setup') this._buildSetup(data || {});
+    // The results screen supersedes in-play toasts ("Round over…"), which
+    // would otherwise sit over its score breakdown.
+    if (name === 'results' && this.el.toasts) this.el.toasts.replaceChildren();
     if (name === 'results' && data) this.resultsView(data);
     if (name === 'boards' && data) this._showBoardsData(data);
     if (name === 'profile') {
@@ -1142,7 +1145,8 @@ export class UI {
     html.classList.toggle('large-text', !!a.largeText);
     html.classList.toggle('left-handed', !!a.leftHanded);
     html.classList.toggle('captions-off', a.captions === false);
-    if (this.el.captions) this.el.captions.hidden = a.captions === false;
+    // only ever hide here; _caption() shows the line when there is text
+    if (this.el.captions && a.captions === false) this.el.captions.hidden = true;
 
     this._reflectSettings();
 

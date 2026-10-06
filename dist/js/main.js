@@ -695,7 +695,9 @@ class App {
       saveAchievements(this.achievements);
       this._mirrorCloud();
       const meta = ACHIEVEMENTS.find((a) => a.key === key);
-      this.ui.toast(`Achievement unlocked: ${meta?.name || key}`, 'achievement');
+      // unlocks happen as a round resolves and the results screen lists them,
+      // so no toast (it would cover the breakdown); screen readers still hear it
+      this.ui.announce(`Achievement unlocked: ${meta?.name || key}`);
       this.audio.playEvent('achievement');
       // mirror to the host when hosted; idempotent server-side, best effort
       this.platform.postAchievement(key).catch(() => {});

@@ -243,7 +243,7 @@ Settings → **Graphics** offers Quality (Auto (detected: …) — software rend
 | `timeWarning` | time-warning.opus | three brass clock ticks and a bell tap | once at 10 s left in timed rounds, with an assertive announcement |
 | `newBest` | new-best.opus | two glass notes rising a fifth | results, 0.7 s after `complete`, on a new personal best |
 
-Captions (`#captions`, on by default) print a short text for placed / recalled / swapped / rotated / locked / not allowed / undo / mosaic complete / round over.
+Captions (`#captions`, on by default) print a short text for placed / recalled / swapped / rotated / locked / not allowed / undo / mosaic complete / round over. The caption line stays hidden until there is text to show. Achievement unlocks are listed on the results screen (and announced to screen readers) rather than toasted; showing results clears in-play toasts, and any toast raised while results are up docks at the top over the status bar so it never covers the heading or buttons.
 
 ## 10. Localization
 
