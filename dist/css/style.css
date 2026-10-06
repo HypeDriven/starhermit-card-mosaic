@@ -837,6 +837,23 @@ html.captions-off .captions { display: none; }
   #board-grid { width: min(68vh, 55vw); max-width: none; flex: 0 0 auto; }
   #tray { max-width: 170px; align-content: center; }
   .tray-slot { width: clamp(40px, 11vh, 64px); }
+  /* title: key art beside the menu so the whole menu fits a ~390px screen */
+  .title-panel:has(.title-art:not([hidden])) {
+    display: grid;
+    grid-template-columns: minmax(0, 38%) minmax(0, 1fr);
+    column-gap: 24px;
+    align-items: center;
+    padding-block: 12px;
+  }
+  .title-panel:has(.title-art:not([hidden])) > * { grid-column: 2; }
+  .title-panel:has(.title-art:not([hidden])) > .title-art {
+    grid-column: 1; grid-row: 1 / span 8; width: 100%; margin: 0;
+  }
+  .title-panel h1 { font-size: 2rem; margin-bottom: 8px; }
+  .title-panel .tagline { display: none; }
+  .title-resume { margin-bottom: 8px; }
+  .title-panel .btn-xl { justify-self: center; padding: 10px 40px; }
+  .title-secondary, .title-tertiary { margin-top: 10px; }
 }
 
 /* Left-handed: mirror rails and bottom tray */

@@ -268,6 +268,9 @@ export class UI {
     }
     this._screen = name;
     this.root.body.classList.toggle('in-play', name === 'play');
+    // Screens share the document scroll: each one opens at its top.
+    const win = this.root.defaultView;
+    if (win) win.scrollTo(0, 0);
 
     if (name === 'title') this._buildTitle(data || {});
     if (name === 'journey') this.updateJourneyMap(data && data.progress);
