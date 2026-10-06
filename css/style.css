@@ -770,6 +770,12 @@ html.captions-off .captions { display: none; }
   .rail-left, .rail-right { position: static; transform: none; }
 }
 
+/* Laptop-height desktop windows (e.g. 1440×900): a slightly smaller key art keeps
+   the whole title (resume row, buttons, footer) on one screen without scrolling */
+@media (min-width: 700px) and (min-height: 821px) and (max-height: 960px) {
+  .title-art { width: min(100%, 560px); }
+}
+
 /* Short desktop windows: keep board + tray inside the viewport height */
 @media (min-width: 700px) and (max-height: 820px) {
   .title-art { width: min(100%, 440px); margin-block-end: 10px; }

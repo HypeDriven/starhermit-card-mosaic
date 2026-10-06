@@ -160,7 +160,7 @@ Feedback for every input: a visual state change on the button (`selected`, `lega
 `main.js` phases: `boot → title ↔ mode-select → preparing → active ↔ paused → resolving → results → (progression | title)`. `ui.js SCREENS`: loading, title, modes, journey, lessons, setup, play, results, help, profile, boards, compat. Overlays (`OVERLAYS`): pause, settings, help, confirm; they stack, trap focus, restore the invoker on close, and Esc closes the top one.
 
 - **Loading**: progress bar with labels Rules → Studio → Table → Cards → Ready.
-- **Title**: key art, tagline, optional Resume/Discard row, Play (autofocus), Daily challenge with countdown, Journey, Profile, Settings, How to play, a summary line ("Journey: n of 50 stages complete · Today's daily: open/done").
+- **Title**: key art, tagline, optional Resume/Discard row, Play (autofocus), Daily challenge with countdown, Journey, Profile, Settings, How to play, a summary line ("Journey: n of 50 stages complete · Today's daily: open/done"). The key art is 640 px wide, 560 px on 821–960 px tall desktop windows and 440 px below that, so the whole title fits a 1440×900 window without scrolling.
 - **Choose a mode**: six cards (name, blurb, duration, assists, Ranked/Casual badge).
 - **Journey**: ten chapter sections of stage buttons with stars or "Locked".
 - **Lessons**: six lesson buttons with a ✓ when completed.
