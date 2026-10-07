@@ -18,7 +18,7 @@ import {
   analyticsSessionId,
 } from './storage.js';
 import { Platform } from './platform.js';
-import { platformStrings } from './platform-strings.js';
+import { platformStrings, fmtPlatform } from './platform-strings.js';
 import { AudioEngine } from './audio.js';
 
 // Renderer is optional: WebGL may be unavailable (compat mode keeps DOM board).
@@ -263,6 +263,7 @@ class App {
         const stars = this.mode === 'journey' ? journeyStars(result, this.session.content.goals.par) : 0;
         const newly = this._applyOutcome(result);
         this._submitResult(result);
+        this._postHighScore(result);
         clearSnapshot();
         this.ui.showScreen('results');
         this.ui.resultsView({
@@ -718,6 +719,18 @@ class App {
       return { label: 'Lessons done — to title', action: 'title' };
     }
     return { label: 'Play again', action: 'retry' };
+  }
+
+  // Signed in, every finished non-lesson round posts its total to the
+  // platform high-score board; the results screen shows the rank.
+  _postHighScore(result) {
+    const show = (key, vars) => this.ui.setLeaderboardLine(key ? fmtPlatform(platformStrings(document.documentElement.lang)[key], vars) : '');
+    if (!this.platform.hosted || this.mode === 'learn') { show(null); return; }
+    show('lbPosting');
+    const total = Math.max(0, Math.round(result.score.total));
+    this.platform.postHighScore(total).then((r) => {
+      show(!r.posted ? 'lbNotPosted' : r.rank ? 'lbRank' : 'lbPosted', { rank: r.rank });
+    });
   }
 
   async _submitResult(result) {

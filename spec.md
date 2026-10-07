@@ -34,7 +34,8 @@ File map (everything that ships or tests the game):
 | `js/audio.js` | WebAudio buses, 18 event ids → clip map with synthesized fallback, generative music, room-tone ambience |
 | `js/platform.js` | StarHermit adapter: hosting probe, server time, scores, leaderboards, achievements, telemetry, activity, presence |
 | `js/main.js` | Controller: phase machine, wall clock, selection, command dispatch, progression, achievements, submissions |
-| `server.js` | Authoritative script (`server=server.js`): static host, `/api/v1/*`, replay-validated boards, cloud, achievements |
+| `score-script.js` | StarHermit platform script (`server=score-script.js`): range-checks a finished round's total and posts it to the `high-score` leaderboard (canonical copy in the games repo's `tools/score-script.js`) |
+| `server.js` | Local dev server: static host, `/api/v1/*`, replay-validated boards, cloud, achievements |
 | `sw.js` | Service worker: precache app shell + art, cache-first static, network-first API |
 | `sfx/*.opus`, `sfx/manifest.txt` | 18 authored clips and the canonical event binding table (§9); `manifest.json` drives generation |
 | `assets/key-art.webp`, `assets/results-*.webp` | Title key art and two results illustrations (§8, §15) |
@@ -262,7 +263,7 @@ Shipped language: **English only** (`<html lang="en">`). Every string is inline 
 
 ## 12. StarHermit integration
 
-Conventions follow https://wiki.starhermit.com/. `starhermit.txt`: `name=Card Mosaic`, `launch=index.html`, `owner=…`, `server=server.js`, `cover=…`, plus one `control.<action>=<codes> | <label>` line per keyboard action. `index.html` loads `starhermit-sdk.js` (the canonical client, shipped unchanged in `dist/`) and calls `StarHermit.init()` before any game script; `js/platform.js` is the game's adapter over `window.StarHermit`. Without a token the game is an offline guest: it makes no network requests and plays fully from localStorage.
+Conventions follow https://wiki.starhermit.com/. `starhermit.txt`: `name=Card Mosaic`, `launch=index.html`, `owner=…`, `server=score-script.js`, `cover=…`, plus one `control.<action>=<codes> | <label>` line per keyboard action. `index.html` loads `starhermit-sdk.js` (the canonical client, shipped unchanged in `dist/`) and calls `StarHermit.init()` before any game script; `js/platform.js` is the game's adapter over `window.StarHermit`. Without a token the game is an offline guest: it makes no network requests and plays fully from localStorage.
 
 | Feature | Used | How |
 |---|---|---|
@@ -273,11 +274,12 @@ Conventions follow https://wiki.starhermit.com/. `starhermit.txt`: `name=Card Mo
 | Settings KV | yes | The `audio`, `graphics`, `access` and `privacy` preference groups are patched to `/api/v1/games/{slug}/settings` on change (debounced) and applied on boot, where the platform value wins over the local copy |
 | Controls | yes | Keyboard actions (focus up/down/left/right, select, cancel, undo, hint, rotate, lock, pause) are declared in `starhermit.txt`; at boot `StarHermit.loadBindings()` resolves the player's bindings, keydown is routed by `event.code` through them, and Settings → Controls lists the effective keys. **Reset bindings to defaults** also clears the platform overrides (`resetControls`) |
 | Invite link | yes | Signed in, the title shows **Invite a friend**, which copies `StarHermit.inviteLink()` to the clipboard with a confirmation toast |
-| Own-server routes | signed in only | `server.js` is the game's own Node backend (local dev). When signed in the adapter probes `GET /api/v1/time` (2 s) and, if present, uses server time, validated score submission (`POST /api/v1/scores`, replay-verified), `GET /api/v1/leaderboards`, achievement records, consent-gated telemetry and activity/presence pings; all degrade to local behaviour when absent |
-| Platform leaderboards / achievements | no | The server is not a platform session script, so it reports no platform scores or achievements; the Score chase screen uses the own-server and local boards |
+| Own-server routes | signed in only | `server.js` is the game's own Node backend (local dev; not deployed to the platform). When signed in the adapter probes `GET /api/v1/time` (2 s) and, if present, uses server time, validated score submission (`POST /api/v1/scores`, replay-verified), `GET /api/v1/leaderboards`, achievement records, consent-gated telemetry and activity/presence pings; all degrade to local behaviour when absent |
+| Platform leaderboard | yes | Signed in, every finished round except Learn lessons posts its total through `StarHermit.submitScores` (a practice session whose `score-script.js` posts it to the `high-score` board: integer, higher is better, 0–10,000); the results screen then shows "Leaderboard rank: #N" (or posted / not posted). Standalone play posts nothing and shows no line. The Score chase screen still uses the own-server and local boards |
+| Platform achievements | no | Achievements are local |
 | Sessions, matchmaking, invites to sessions, chat, replays, realtime, voice | no | Single-player puzzle with no platform sessions |
 
-New platform UI strings (sign in, invite, toasts) ship in all nine locales (`js/platform-strings.js`).
+New platform UI strings (sign in, invite, toasts, leaderboard line) ship in all nine locales (`js/platform-strings.js`).
 
 ## 13. Technical architecture
 
@@ -287,7 +289,7 @@ New platform UI strings (sign in, invite, toasts) ship in all nine locales (`js/
 - **Clock.** `main.js` accumulates active-play milliseconds with `performance.now()`, excluding pauses (including automatic pause on `visibilitychange`), and stamps each command with the quantized value; a 10 Hz tick refreshes the HUD, checks time limits and the 10 s warning, and sends presence.
 - **Rendering budget.** Graphics presets (§8 Graphics); Low matches the old low tier (pixel ratio 1, no shadows/AA/post, 500 particles, no props, no IBL). Card faces are 256 px canvas textures repainted on theme/CVD change; particles are one pooled `Points`; the loop stops while the tab is hidden; WebGL context loss rebuilds the scene from the content doc and falls back to the DOM board if that fails.
 - **Offline.** `sw.js` precaches the shell, scripts, `three`, manifest, favicon and the three art files; static requests are cache-first, `/api/` is network-first and never cached. `CACHE_VERSION` is bumped on every shipped change.
-- **Distribution.** `tools/build-dist.sh` copies `index.html css js vendor sfx assets server.js starhermit.txt sw.js browser-guard.js starhermit-sdk.js favicon.svg icon.png coverart.png LICENSE.md` into `dist/`; `server.js` refuses paths outside its root and serves only known MIME types, so `tests/`, `tools/` and dotfiles are never served.
+- **Distribution.** `tools/build-dist.sh` copies `index.html css js vendor sfx assets server.js score-script.js starhermit.txt sw.js browser-guard.js starhermit-sdk.js favicon.svg icon.png coverart.png LICENSE.md` into `dist/`; `server.js` refuses paths outside its root and serves only known MIME types, so `tests/`, `tools/` and dotfiles are never served.
 - **How the e2e drives the real UI.** `tests/e2e.mjs` starts its own static server (`PORT` env or ephemeral), launches system Chrome with SwiftShader, and clicks real buttons: `#btn-play`, `.mode-card[data-mode="journey"]`, `.stage-btn`, `#tray .tray-slot[data-index]`, `#board-grid .cell[data-index]`, key presses `r`/`h`/`u`/`p`, `#btn-resume`, `#btn-pause-leave`, `#btn-confirm-yes`, `#btn-title-resume`. It reads `window.__cm` only to decide which card goes where and to wait for ticks.
 
 ## 14. Testing and acceptance criteria

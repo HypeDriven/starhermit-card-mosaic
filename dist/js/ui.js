@@ -143,6 +143,7 @@ export class UI {
       resultsPar: $('results-par'),
       resultsAchievements: $('results-achievements'),
       resultsBoard: $('results-board'),
+      resultsLb: $('results-lb'),
       btnResultsRetry: $('btn-results-retry'),
       btnResultsNext: $('btn-results-next'),
       btnResultsMap: $('btn-results-map'),
@@ -980,6 +981,14 @@ export class UI {
     const next = data.nextAction || { label: 'Next', action: 'next' };
     this._setText(this.el.btnResultsNext, next.label || 'Next');
     this.el.btnResultsNext.dataset.action = next.action || 'next';
+  }
+
+  /** Leaderboard status line on the results screen ('' hides it). */
+  setLeaderboardLine(text) {
+    const line = this.el.resultsLb;
+    if (!line) return;
+    line.hidden = !text;
+    line.textContent = text || '';
   }
 
   // ---------------------------------------------------------------- journey

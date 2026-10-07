@@ -214,6 +214,25 @@ export class Platform {
     return { ok: false, error: (res.body && res.body.error) || 'submit-failed' };
   }
 
+  /**
+   * Post a finished round's total to the StarHermit `high-score` board
+   * (score-script.js) via StarHermit.submitScores; resolves {posted, rank}
+   * — the player's rank on that board, or null. Signed out: posts nothing.
+   */
+  async postHighScore(total) {
+    const s = sdk();
+    if (!s || !s.signedIn) return { posted: false, rank: null };
+    try {
+      const keys = await s.submitScores({ 'high-score': total });
+      if (!keys || keys.indexOf('high-score') < 0) return { posted: false, rank: null };
+      try {
+        const r = await s.leaderboard('high-score', { pageSize: 100 });
+        const me = ((r && r.items) || []).find((i) => i.userId === s.userId);
+        return { posted: true, rank: me ? me.rank : null };
+      } catch { return { posted: true, rank: null }; }
+    } catch { return { posted: false, rank: null }; }
+  }
+
   /** GET /leaderboards?board=&scope= → {ok, entries, validated} */
   async fetchLeaderboard({ board, scope = 'global' } = {}) {
     if (!this._serverReachable) return { ok: false };
