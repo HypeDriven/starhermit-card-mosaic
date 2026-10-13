@@ -734,7 +734,7 @@ export class Renderer {
     // prewarm shaders + one warm-up frame
     try {
       this._renderer.compile(this._scene, this._camera);
-      this._renderer.render(this._scene, this._camera);
+      (globalThis.GameOptions ? globalThis.GameOptions.draw(this._renderer, () => this._renderer.render(this._scene, this._camera)) : this._renderer.render(this._scene, this._camera));
     } catch (_) { /* prewarm is best-effort */ }
   }
 
@@ -1889,14 +1889,14 @@ export class Renderer {
     }
     if (this._composer) {
       try {
-        this._composer.render(dt);
+        (globalThis.GameOptions ? globalThis.GameOptions.draw(this._composer.renderer, () => this._composer.render(dt)) : this._composer.render(dt));
         return;
       } catch (_) {
         this._postFailed = true;
         this._disposePost();
       }
     }
-    this._renderer.render(this._scene, this._camera);
+    (globalThis.GameOptions ? globalThis.GameOptions.draw(this._renderer, () => this._renderer.render(this._scene, this._camera)) : this._renderer.render(this._scene, this._camera));
   }
 
   // -------------------------------------------------------------------------

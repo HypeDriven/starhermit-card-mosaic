@@ -123,7 +123,7 @@ export class AudioEngine {
         const g = this._ctx.createGain();
         g.gain.value = this._busVolumes[bus];
         g.connect(this._master);
-        this._buses[bus] = g;
+        this._buses[bus] = (globalThis.GameOptions ? globalThis.GameOptions.tagBus(g, bus) : g);
       }
       this._makeNoiseBuffer();
       if (this._ambTheme) this._startAmbienceScheduler();
@@ -222,7 +222,7 @@ export class AudioEngine {
       const buffer = this._sfxBuffers.get(clip);
       if (!buffer) return false;
       try {
-        const src = this._ctx.createBufferSource();
+        const src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this._ctx.createBufferSource(), name) : this._ctx.createBufferSource());
         src.buffer = buffer;
         src.connect(this._buses.effects || this._master);
         src.start();
@@ -280,7 +280,7 @@ export class AudioEngine {
   /** Short pitched blip. */
   blip(when, freq, dur, type = 'sine', peak = 0.1, bus = 'effects') {
     if (!this._ctx) return;
-    const osc = this._ctx.createOscillator();
+    const osc = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this._ctx.createOscillator(), bus) : this._ctx.createOscillator());
     osc.type = type;
     osc.frequency.setValueAtTime(freq, when);
     const g = this._envGain(bus, peak, 0.008, dur, when);
@@ -295,11 +295,11 @@ export class AudioEngine {
     const per = peak / Math.max(1, freqs.length);
     freqs.forEach((f, i) => {
       const t = when + i * gap;
-      const osc = this._ctx.createOscillator();
+      const osc = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this._ctx.createOscillator(), bus) : this._ctx.createOscillator());
       osc.type = 'sine';
       osc.frequency.setValueAtTime(f, t);
       // gentle shimmer partial
-      const osc2 = this._ctx.createOscillator();
+      const osc2 = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this._ctx.createOscillator(), bus) : this._ctx.createOscillator());
       osc2.type = 'sine';
       osc2.frequency.setValueAtTime(f * 2, t);
       const g = this._envGain(bus, per, 0.01, dur, t);
@@ -314,7 +314,7 @@ export class AudioEngine {
   /** Soft felt thump: low sine with fast pitch drop. */
   thump(when, freq, dur, peak = 0.5, bus = 'effects') {
     if (!this._ctx) return;
-    const osc = this._ctx.createOscillator();
+    const osc = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this._ctx.createOscillator(), bus) : this._ctx.createOscillator());
     osc.type = 'sine';
     osc.frequency.setValueAtTime(freq, when);
     osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq * 0.5), when + dur);
@@ -327,7 +327,7 @@ export class AudioEngine {
   /** Paper tap: short band-passed noise burst. */
   paperTap(when, dur, peak = 0.15, bus = 'effects', center = 2400) {
     if (!this._ctx || !this._noiseBuffer) return;
-    const src = this._ctx.createBufferSource();
+    const src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this._ctx.createBufferSource(), bus) : this._ctx.createBufferSource());
     src.buffer = this._noiseBuffer;
     const filt = this._ctx.createBiquadFilter();
     filt.type = 'bandpass';
@@ -363,7 +363,7 @@ export class AudioEngine {
     if (this._ambTimer || !this._ctx) return;
     // room tone: looped filtered noise, very quiet
     if (this._noiseBuffer && !this._roomTone) {
-      const src = this._ctx.createBufferSource();
+      const src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this._ctx.createBufferSource(), null) : this._ctx.createBufferSource());
       src.buffer = this._noiseBuffer;
       src.loop = true;
       const filt = this._ctx.createBiquadFilter();
@@ -439,7 +439,7 @@ export class AudioEngine {
         if (step % 8 === 0) {
           const root = SCALE[rng.intRange(0, 3)];
           for (const mult of [1, 1.5, 2]) {
-            const osc = this._ctx.createOscillator();
+            const osc = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this._ctx.createOscillator(), null) : this._ctx.createOscillator());
             osc.type = 'sine';
             osc.frequency.setValueAtTime(root * mult * 0.5, t);
             const g = this._ctx.createGain();
@@ -454,7 +454,7 @@ export class AudioEngine {
         // slow arpeggio on odd steps
         if (step % 2 === 1 && rng.float() < 0.6) {
           const f = SCALE[rng.intRange(3, 8)];
-          const osc = this._ctx.createOscillator();
+          const osc = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this._ctx.createOscillator(), null) : this._ctx.createOscillator());
           osc.type = 'triangle';
           osc.frequency.setValueAtTime(f, t);
           const g = this._ctx.createGain();
@@ -467,7 +467,7 @@ export class AudioEngine {
         }
         // gentle pulse at intensity 2
         if (this._musicLevel === 2 && step % 2 === 0) {
-          const osc = this._ctx.createOscillator();
+          const osc = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this._ctx.createOscillator(), null) : this._ctx.createOscillator());
           osc.type = 'sine';
           osc.frequency.setValueAtTime(step % 4 === 0 ? 110 : 82.4, t);
           const g = this._ctx.createGain();
