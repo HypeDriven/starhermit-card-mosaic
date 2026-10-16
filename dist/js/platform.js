@@ -37,6 +37,8 @@ export class Platform {
     this._lastHeartbeat = 0;
     this._playing = false;
     this._saveWaiters = [];
+    this._conflictListeners = [];
+    this._conflict = false;
     this._serverReachable = false;
   }
 
@@ -55,9 +57,22 @@ export class Platform {
   async init() {
     const s = sdk();
     if (s) {
+      // A write that lost to a newer save on another device: the SDK emits
+      // 'saveconflict' (then 'saved' false) and blocks writes until a reload.
+      s.on('saveconflict', () => { this._conflict = true; });
       s.on('saved', (ok) => {
-        this._setSync(ok ? 'synced' : 'offline');
         const w = this._saveWaiters; this._saveWaiters = [];
+        if (!ok && this._conflict) {
+          this._conflict = false;
+          this._setSync('saving');
+          s.loadJSON().then((remote) => {
+            for (const fn of w) fn({ ok: false, error: 'conflict', remote });
+            if (s.saveConflicted()) { this._setSync('offline'); return; }
+            for (const fn of this._conflictListeners) { try { fn(remote); } catch { /* listener errors never break the adapter */ } }
+          });
+          return;
+        }
+        this._setSync(ok ? 'synced' : 'offline');
         for (const fn of w) fn(ok ? { ok: true } : { ok: false, error: 'network' });
       });
       s.on('auth', (a) => {
@@ -76,6 +91,8 @@ export class Platform {
   }
 
   onAuth(fn) { if (typeof fn === 'function') this._authListeners.push(fn); }
+  /** fn(remoteDoc|null) after a save conflict: the newer cloud copy, reloaded (writes allowed again). */
+  onConflict(fn) { if (typeof fn === 'function') this._conflictListeners.push(fn); }
   canSignIn() { const s = sdk(); return !!(s && s.canSignIn()); }
   signIn() { const s = sdk(); return !!(s && s.signIn()); }
   inviteLink() { const s = sdk(); return s && s.signedIn ? s.inviteLink() : null; }
@@ -92,9 +109,11 @@ export class Platform {
   profileFor(userId) {
     const s = sdk();
     if (!userId || typeof userId !== 'string') return Promise.resolve('Anonymous');
-    if (!s || !s.signedIn) return Promise.resolve('Player ' + userId.slice(0, 6));
-    return s.profile(userId).then((p) => (p && p.displayName) || 'Player ' + userId.slice(0, 6))
-      .catch(() => 'Player ' + userId.slice(0, 6));
+    const tr = (k, v) => (globalThis.CMI18N ? globalThis.CMI18N.T(k, v) : k.replace('{id}', v.id));
+    const fallback = tr('Player {id}', { id: userId.slice(0, 6) });
+    if (!s || !s.signedIn) return Promise.resolve(fallback);
+    return s.profile(userId).then((p) => (p && p.displayName) || fallback)
+      .catch(() => fallback);
   }
 
   async fetchProfile() {

@@ -23,6 +23,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { stubStarHermit, launchToken } from './starhermit-e2e.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const MIME = {
@@ -42,6 +43,8 @@ const browserNoise = /GL Driver Message|GPU stall due to ReadPixels|Automatic fa
 function wireErrorCollection(page) {
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
+    // Playwright's own notice when a context blocks service workers (languagePass).
+    if (m.type() === 'warning' && /^Service Worker registration blocked by Playwright/.test(m.text())) return;
     if (m.type() === 'warning') { errors.push(`console warning: ${m.text()}`); return; }
     if (m.type() !== 'error') return;
     if (m.text().startsWith('Failed to load resource') && (m.location()?.url || '').includes('/api/')) return;
@@ -238,6 +241,86 @@ async function graphicsSettings(page, tag) {
   console.log(`  graphics: ${summary}`);
 }
 
+/**
+ * Signed in against a stubbed StarHermit API whose account prefers fr-CA
+ * (service workers blocked so page.route sees every /api call): Automatic
+ * resolves to Canadian French; switching to Italian from Settings while a
+ * round is paused re-renders every visible string, keeps the round and
+ * syncs ui.language; Report a problem posts a bug report.
+ */
+async function languagePass(tag, opts) {
+  const ctx = await browser.newContext({ ...opts, serviceWorkers: 'block' });
+  const page = await ctx.newPage();
+  wireErrorCollection(page);
+  const calls = await stubStarHermit(page, { preferredLanguage: 'fr-CA' });
+  await page.goto(`${BASE}/index.html#game_token=${launchToken()}`, { waitUntil: 'load' });
+  await waitTitle(page);
+  await page.waitForFunction(() => document.documentElement.lang === 'fr-CA' && document.getElementById('btn-play').textContent.trim() === 'Jouer');
+  await page.click('#btn-play');
+  await page.waitForSelector('#screen-modes:not([hidden])');
+  await page.click('.mode-card[data-mode="journey"]');
+  await page.waitForSelector('#screen-journey:not([hidden])');
+  const stage = (await page.locator('.stage-btn:not([disabled]) .stage-name').first().textContent()).trim();
+  if (stage !== 'Étape 1') throw new Error('journey stage not localized: ' + stage);
+  await page.locator('.stage-btn:not([disabled])').first().click();
+  await page.waitForFunction(() => window.__cm?.phase === 'active');
+  await page.click(`#tray .tray-slot[data-index="0"]`);
+  const tick = await page.evaluate(() => window.__cm.session.state.tick);
+  await page.keyboard.press('p');
+  await page.waitForSelector('#overlay-pause:not([hidden])');
+  await page.waitForFunction(() => document.getElementById('pause-h').textContent === 'En pause');
+  await page.click('#btn-pause-graphics');
+  await page.waitForFunction(() => document.getElementById('settings-h').textContent === 'Paramètres');
+  const choice = page.locator('[data-game-language="choice"]');
+  await choice.scrollIntoViewIfNeeded();
+  const auto = await choice.locator('option').first().textContent();
+  if (auto !== 'Automatique — Français (Canada)') throw new Error('Automatic label not resolved: ' + auto);
+  if (await page.locator('[data-game-language="choice"]').count() !== 1) throw new Error('expected exactly one language selector');
+  await choice.selectOption('it-IT');
+  await page.waitForFunction(() => document.documentElement.lang === 'it-IT' &&
+    document.getElementById('settings-h').textContent === 'Impostazioni' &&
+    document.getElementById('tab-graphics').textContent === 'Grafica' &&
+    document.getElementById('gfx-quality-label').textContent === 'Qualità');
+  await page.waitForFunction(() => /Salvato/.test(document.querySelector('[data-game-language="status"]')?.textContent || ''));
+  if (calls.settings['ui.language']?.choice !== 'it-IT') throw new Error('ui.language not saved: ' + JSON.stringify(calls.settings));
+  const report = page.locator('[data-game-report="title"]');
+  await report.scrollIntoViewIfNeeded();
+  await report.fill('Test report');
+  await page.click('[data-game-report="send"]');
+  await page.waitForFunction(() => /Grazie/.test(document.querySelector('[data-game-report="status"]').textContent));
+  if (!calls.reports?.[0] || calls.reports[0].kind !== 'bug') throw new Error('report not posted');
+  const spill = await page.evaluate(() => {
+    const w = document.documentElement.clientWidth;
+    return [...document.querySelectorAll('#overlay-settings select, #overlay-settings input, #overlay-settings button, #overlay-settings textarea, #overlay-settings label')]
+      .filter((n) => n.offsetParent && n.getBoundingClientRect().right > w + 1).map((n) => n.outerHTML.slice(0, 60));
+  });
+  if (spill.length) throw new Error('settings controls cut off: ' + spill.join(','));
+  await page.screenshot({ path: `/tmp/card-mosaic-e2e-language-${tag}.png` });
+  await page.click('#btn-settings-close');
+  await page.waitForFunction(() => document.getElementById('pause-h').textContent === 'In pausa' &&
+    document.getElementById('btn-resume').textContent.trim() === 'Riprendi');
+  await page.click('#btn-resume');
+  await page.waitForFunction(() => window.__cm?.phase === 'active');
+  await page.waitForFunction(() => /caselle su/.test(document.getElementById('hud-progress').textContent) &&
+    /Ruota/.test(document.getElementById('btn-rotate').textContent));
+  const after = await page.evaluate(() => ({ tick: window.__cm.session.state.tick, sel: window.__cm.selectedTray }));
+  if (after.tick !== tick || after.sel !== 0) throw new Error('round changed during the language switch: ' + JSON.stringify(after));
+  await page.keyboard.press('p');
+  await page.waitForSelector('#overlay-pause:not([hidden])');
+  await page.click('#btn-pause-leave');
+  await page.waitForFunction(() => document.getElementById('btn-confirm-yes').textContent === 'Esci');
+  await page.click('#btn-confirm-yes');
+  await waitTitle(page);
+  await page.click('#btn-title-settings');
+  await page.click('#tab-graphics');
+  await choice.scrollIntoViewIfNeeded();
+  await choice.selectOption('auto');
+  await page.waitForFunction(() => document.documentElement.lang === 'fr-CA');
+  await page.click('#btn-settings-close');
+  await page.waitForFunction(() => document.getElementById('btn-play').textContent.trim() === 'Jouer');
+  await ctx.close();
+}
+
 async function expectClean(tag) {
   const bad = errors.filter((e) => !browserNoise.test(e));
   if (bad.length) throw new Error(`${tag} pass had page errors:\n${bad.join('\n')}`);
@@ -353,6 +436,8 @@ try {
     });
 
     await ctx.close();
+    await step('Language: Automatic follows the StarHermit preference; live switch mid-round; ui.language; report a problem', () =>
+      languagePass(tag, { viewport: { width: 1280, height: 800 } }));
     await expectClean(tag);
     console.log('ok - desktop pass clean of page errors');
   }
@@ -388,6 +473,8 @@ try {
     });
 
     await ctx.close();
+    await step('mobile: Language: Automatic follows the StarHermit preference; live switch mid-round; ui.language; report a problem', () =>
+      languagePass(tag, { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }));
     await expectClean(tag);
     console.log('ok - mobile pass clean of page errors');
   }

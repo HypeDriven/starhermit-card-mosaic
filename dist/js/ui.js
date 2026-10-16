@@ -34,6 +34,19 @@ import { PRESETS, CATEGORIES, SHADOW_MAP, resolve, presetTier, choosePreset } fr
 import { gfxStrings, fmt } from './gfx-strings.js';
 import { platformStrings } from './platform-strings.js';
 
+/** Localized text (js/i18n.js); English source strings are the keys. */
+export const tr = (key, vars) => (globalThis.CMI18N ? globalThis.CMI18N.T(key, vars) : key);
+/** Marks an English key that is translated with tr() when shown. */
+export const N = (s) => s;
+/** A value that may be a function (re-evaluated per language) or an English key. */
+const txt = (v) => (typeof v === 'function' ? v() : v == null ? '' : tr(String(v)));
+/** Journey stage names are authored as "Stage n" / "Mastery n". */
+export function stageName(name) {
+  const m = /^(Stage|Mastery) (\d+)$/.exec(name || '');
+  if (!m) return tr(name);
+  return tr(m[1] === 'Stage' ? N('Stage {n}') : N('Mastery {n}'), { n: m[2] });
+}
+
 const SCREENS = ['loading', 'title', 'modes', 'journey', 'lessons', 'setup',
   'play', 'results', 'help', 'profile', 'boards', 'compat'];
 
@@ -41,31 +54,31 @@ const OVERLAYS = ['pause', 'settings', 'help', 'confirm'];
 
 // Plain-language mapping for every validateCommand reason in rules.js.
 const REASON_TEXT = {
-  'unknown-command': 'That action is not available.',
-  'round-over': 'The round is already over.',
-  'bad-tray-slot': 'That tray slot does not exist.',
-  'bad-cell': 'That cell is not part of the board.',
-  'tray-slot-empty': 'That tray slot is empty.',
-  'cell-occupied': 'That cell already holds a card.',
-  'cell-empty': 'That cell is empty.',
-  'card-locked': 'That card is locked and cannot move.',
-  'same-cell': 'Choose two different cells to swap.',
-  'rotation-disabled': 'Rotating is not part of this puzzle.',
-  'lock-disabled': 'Locking is not part of this puzzle.',
-  'already-locked': 'That card is already locked.',
-  'neighbors-mismatch': 'Locking needs every placed neighbor to match.',
-  'no-tray-slot': 'That card is anchored to the table and cannot be recalled.',
-  'not-terminal': 'The round cannot be settled yet.',
+  'unknown-command': N('That action is not available.'),
+  'round-over': N('The round is already over.'),
+  'bad-tray-slot': N('That tray slot does not exist.'),
+  'bad-cell': N('That cell is not part of the board.'),
+  'tray-slot-empty': N('That tray slot is empty.'),
+  'cell-occupied': N('That cell already holds a card.'),
+  'cell-empty': N('That cell is empty.'),
+  'card-locked': N('That card is locked and cannot move.'),
+  'same-cell': N('Choose two different cells to swap.'),
+  'rotation-disabled': N('Rotating is not part of this puzzle.'),
+  'lock-disabled': N('Locking is not part of this puzzle.'),
+  'already-locked': N('That card is already locked.'),
+  'neighbors-mismatch': N('Locking needs every placed neighbor to match.'),
+  'no-tray-slot': N('That card is anchored to the table and cannot be recalled.'),
+  'not-terminal': N('The round cannot be settled yet.'),
 };
 
 // Static presentation data for the mode-select cards.
 const MODE_META = {
-  learn:     { blurb: 'Interactive lessons introduce one rule at a time.', duration: '2–5 min' },
-  journey:   { blurb: 'Authored stages that combine mechanics and end in mastery tests.', duration: '3–8 min' },
-  daily:     { blurb: 'One shared mosaic per UTC day, same seed for everyone.', duration: '≈5 min' },
-  practice:  { blurb: 'Relaxed play at your chosen difficulty. No rating effects.', duration: '3–10 min' },
-  challenge: { blurb: 'Constrained goals: move budgets, clocks, and impostor cards.', duration: '5–10 min' },
-  score:     { blurb: 'Chase global and friends leaderboards on validated seeds.', duration: '5–10 min' },
+  learn:     { blurb: N('Interactive lessons introduce one rule at a time.'), duration: N('2–5 min') },
+  journey:   { blurb: N('Authored stages that combine mechanics and end in mastery tests.'), duration: N('3–8 min') },
+  daily:     { blurb: N('One shared mosaic per UTC day, same seed for everyone.'), duration: N('≈5 min') },
+  practice:  { blurb: N('Relaxed play at your chosen difficulty. No rating effects.'), duration: N('3–10 min') },
+  challenge: { blurb: N('Constrained goals: move budgets, clocks, and impostor cards.'), duration: N('5–10 min') },
+  score:     { blurb: N('Chase global and friends leaderboards on validated seeds.'), duration: N('5–10 min') },
 };
 
 const LONG_PRESS_MS = 550;
@@ -221,12 +234,13 @@ export class UI {
     this._annTimers[kind] = setTimeout(() => { region.textContent = msg; }, 40);
   }
 
-  /** Transient visual toast. kind: 'info' | 'warn' | 'success'. */
+  /** Transient visual toast. kind: 'info' | 'warn' | 'success'. msg may be a function (follows language changes). */
   toast(msg, kind = 'info') {
     const host = this.el.toasts;
     if (!host) return;
     while (host.children.length >= 4) host.firstChild.remove();
-    const t = el('div', 'toast toast-' + kind, msg);
+    const t = el('div', 'toast toast-' + kind, typeof msg === 'function' ? msg() : msg);
+    if (typeof msg === 'function') t.__text = msg;
     t.addEventListener('click', () => t.remove());
     host.appendChild(t);
     setTimeout(() => { if (t.isConnected) t.remove(); }, 4200);
@@ -237,7 +251,7 @@ export class UI {
     const c = this.el.captions;
     if (!c) return;
     c.hidden = false;
-    c.textContent = '♪ ' + text;
+    c.textContent = '♪ ' + tr(text);
     clearTimeout(this._captionTimer);
     this._captionTimer = setTimeout(() => { c.hidden = true; }, 2200);
   }
@@ -273,6 +287,7 @@ export class UI {
     const win = this.root.defaultView;
     if (win) win.scrollTo(0, 0);
 
+    this._screenData = data;
     if (name === 'title') this._buildTitle(data || {});
     if (name === 'journey') this.updateJourneyMap(data && data.progress);
     if (name === 'lessons' && data && data.progress) this._lessonProgress = data.progress;
@@ -308,9 +323,9 @@ export class UI {
     if (summary) {
       const bits = [];
       if (data.journeyDone != null && data.journeyTotal != null) {
-        bits.push('Journey: ' + data.journeyDone + ' of ' + data.journeyTotal + ' stages complete');
+        bits.push(tr('Journey: {n} of {total} stages complete', { n: data.journeyDone, total: data.journeyTotal }));
       }
-      if (data.dailyKey) bits.push('Today’s daily: ' + (data.dailyDone ? 'done' : 'open'));
+      if (data.dailyKey) bits.push(tr(data.dailyDone ? 'Today’s daily: done' : 'Today’s daily: open'));
       this._setText(summary, bits.join(' · '));
     }
     this.setPlatformButtons(this._call('onPlatformState') || {});
@@ -332,16 +347,17 @@ export class UI {
     const label = (c) => ({
       ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Escape: 'Esc', Space: 'Space', Enter: 'Enter',
     }[c] || c.replace(/^Key|^Digit/, ''));
+    this._bindings = bindings;
     const rows = [
-      [['left', 'up', 'down', 'right'], 'Move focus among cells and tray cards'],
-      [['select'], 'Select or confirm'],
-      [['cancel'], 'Cancel selection, close dialog, or pause'],
-      [['undo'], 'Undo'], [['hint'], 'Hint'], [['rotate'], 'Rotate selected tray card'],
-      [['lock'], 'Lock selected cell'], [['pause'], 'Pause'],
+      [['left', 'up', 'down', 'right'], N('Move focus among cells and tray cards')],
+      [['select'], N('Select or confirm')],
+      [['cancel'], N('Cancel selection, close dialog, or pause')],
+      [['undo'], N('Undo')], [['hint'], N('Hint')], [['rotate'], N('Rotate selected tray card')],
+      [['lock'], N('Lock selected cell')], [['pause'], N('Pause')],
     ];
     body.textContent = '';
     for (const [actions, text] of rows) {
-      const tr = el('tr');
+      const row = el('tr');
       const th = el('th');
       th.scope = 'row';
       const codes = actions.flatMap((a) => bindings[a] || []);
@@ -349,9 +365,9 @@ export class UI {
         if (i && actions.length === 1) th.appendChild(this.root.createTextNode(' / '));
         th.appendChild(el('kbd', '', label(c)));
       });
-      tr.appendChild(th);
-      tr.appendChild(el('td', '', text));
-      body.appendChild(tr);
+      row.appendChild(th);
+      row.appendChild(el('td', '', tr(text)));
+      body.appendChild(row);
     }
   }
 
@@ -372,7 +388,7 @@ export class UI {
       for (const key of Object.keys(data.local || {})) {
         for (const e of data.local[key]) {
           entries.push({
-            name: e.name || 'You',
+            name: e.name || tr('You'),
             score: e.score != null ? e.score : (e.result && e.result.score.total),
             you: true,
             casual: true,
@@ -409,9 +425,8 @@ export class UI {
     if (name === 'settings') { this._selectSettingsTab((data && data.tab) || 'audio'); this.refreshGraphics(); }
     if (name === 'confirm') {
       this._confirmAction = (data && data.action) || null;
-      this.el.confirmTitle.textContent = (data && data.title) || 'Are you sure?';
-      this.el.confirmMessage.textContent = (data && data.message) || '';
-      this.el.btnConfirmYes.textContent = (data && data.confirmLabel) || 'Confirm';
+      this._confirmData = data || {};
+      this._renderConfirm();
     }
     if (name === 'help') this._call('onHelpOpen');
     ov.hidden = false;
@@ -481,6 +496,45 @@ export class UI {
     const first = items[0], last = items[items.length - 1];
     if (e.shiftKey && this.root.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && this.root.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+
+  _renderConfirm() {
+    const d = this._confirmData || {};
+    this.el.confirmTitle.textContent = txt(d.title || N('Are you sure?'));
+    this.el.confirmMessage.textContent = txt(d.message || '');
+    this.el.btnConfirmYes.textContent = txt(d.confirmLabel || N('Confirm'));
+  }
+
+  /**
+   * Language change: re-render every string this layer wrote from code (the
+   * static markup is re-applied by js/i18n.js). Board, selection and the
+   * round in play are untouched; only labels are rewritten.
+   */
+  relocalize() {
+    this._buildModeList();
+    this._buildLessonList();
+    this._buildThemePicker();
+    this._markThemePressed();
+    this._buildScoreRows();
+    if (this._vm) {
+      for (const b of this._cellEls) b.__sig = null;
+      for (const b of this._trayEls) b.__sig = null;
+      this.setSessionView(this._vm);
+      this._statusText = null;
+      this._setStatus(this._statusSummary(this._vm));
+    }
+    if (this._bindings) this.renderBindings(this._bindings);
+    if (this._screen === 'title') this._buildTitle(this._screenData || {});
+    if (this._setupData) this._buildSetup(this._setupData);
+    if (this._journeyProgress) this.updateJourneyMap();
+    if (this._resultsData) this.resultsView(this._resultsData);
+    if (this._lbText !== undefined) this.setLeaderboardLine(this._lbText);
+    if (this._boards) this.updateBoards();
+    if (this._profile) this.updateProfile(this._profile);
+    if (this._overlayStack.some((o) => o.name === 'confirm')) this._renderConfirm();
+    this.refreshGraphics();
+    this.setPlatformButtons(this._call('onPlatformState') || {});
+    for (const t of this.el.toasts ? [...this.el.toasts.children] : []) if (t.__text) t.textContent = t.__text();
   }
 
   // ---------------------------------------------------------------- loading
@@ -624,8 +678,8 @@ export class UI {
   /** Human-readable card description: "card with Wave north, Sun east, …". */
   _cardDescription(card) {
     const eff = effectiveEdges(card);
-    const dirs = ['north', 'east', 'south', 'west'];
-    return 'card with ' + eff.map((m, d) => MOTIFS[m].name + ' ' + dirs[d]).join(', ');
+    const dirs = [N('{motif} north'), N('{motif} east'), N('{motif} south'), N('{motif} west')];
+    return tr('card with {edges}', { edges: eff.map((m, d) => tr(dirs[d], { motif: tr(MOTIFS[m].name) })).join(', ') });
   }
 
   _syncCards(state) {
@@ -675,13 +729,13 @@ export class UI {
 
       // Accessible name: concise navigable description.
       const { x, y } = cellXY(state, i);
-      let label = 'Row ' + (y + 1) + ' column ' + (x + 1) + ', ';
+      let label = tr('Row {r} column {c}', { r: y + 1, c: x + 1 }) + ', ';
       if (!card) {
-        label += legal.has(i) ? 'empty, legal placement' : 'empty';
+        label += legal.has(i) ? tr('empty, legal placement') : tr('empty');
       } else {
         label += this._cardDescription(card);
-        if (card.locked) label += ', locked';
-        else if (this._ana.mismatch.has(i)) label += ', has mismatched edges';
+        if (card.locked) label += tr(', locked');
+        else if (this._ana.mismatch.has(i)) label += tr(', has mismatched edges');
       }
       btn.setAttribute('aria-label', label);
     }
@@ -703,7 +757,7 @@ export class UI {
       btn.setAttribute('aria-pressed', this._sel.tray === i ? 'true' : 'false');
       btn.setAttribute('aria-disabled', this._busy ? 'true' : 'false');
       btn.setAttribute('aria-label',
-        'Tray slot ' + (i + 1) + ', ' + (card ? this._cardDescription(card) : 'empty'));
+        tr('Tray slot {n}', { n: i + 1 }) + ', ' + (card ? this._cardDescription(card) : tr('empty')));
     }
     // Selection hygiene: selected tray slot emptied -> drop selection.
     if (this._sel.tray != null && state.tray[this._sel.tray] === null) this._sel.tray = null;
@@ -712,15 +766,15 @@ export class UI {
 
   _buildScoreRows() {
     const rows = [
-      ['matched', 'Matched edges'], ['locks', 'Locks'], ['completion', 'Completion'],
-      ['timeBonus', 'Time bonus'], ['swapPenalty', 'Swap penalty'],
-      ['invalidPenalty', 'Invalid penalty'], ['total', 'Total'],
+      ['matched', N('Matched edges')], ['locks', N('Locks')], ['completion', N('Completion')],
+      ['timeBonus', N('Time bonus')], ['swapPenalty', N('Swap penalty')],
+      ['invalidPenalty', N('Invalid penalty')], ['total', N('Total')],
     ];
     const mk = (dl) => {
       dl.textContent = '';
       const out = {};
       for (const [key, label] of rows) {
-        const dt = el('dt', null, label);
+        const dt = el('dt', null, tr(label));
         const dd = el('dd', null, '0');
         if (key === 'total') { dt.className = 'total'; dd.className = 'total'; }
         dl.appendChild(dt);
@@ -743,12 +797,12 @@ export class UI {
   }
 
   _objectiveText(vm) {
-    if (vm.mode === 'learn' && vm.lesson) return 'Lesson: ' + vm.lesson.name;
+    if (vm.mode === 'learn' && vm.lesson) return tr('Lesson: {name}', { name: tr(vm.lesson.name) });
     const s = vm.state;
     const total = s.grid.w * s.grid.h;
     const empty = s.cells.filter((c) => c === null).length;
-    if (empty > 0) return 'Complete the mosaic — fill ' + empty + ' of ' + total + ' cells.';
-    return 'Resolve the remaining mismatched edges.';
+    if (empty > 0) return tr('Complete the mosaic — fill {n} of {total} cells.', { n: empty, total });
+    return tr('Resolve the remaining mismatched edges.');
   }
 
   _syncHud(vm) {
@@ -761,26 +815,26 @@ export class UI {
       // main.js sends the step object as lessonStep plus lessonStepIndex.
       const step = (vm.lessonStep && vm.lessonStep.text) ? vm.lessonStep
         : vm.lesson.steps[Math.min(vm.lessonStepIndex || 0, vm.lesson.steps.length - 1)];
-      this._setText(this.el.hudLesson, step ? step.text : '');
+      this._setText(this.el.hudLesson, step ? tr(step.text) : '');
     }
 
     const total = state.cells.length;
     const filled = state.cells.filter((c) => c !== null).length;
-    this._setText(this.el.hudProgress, filled + ' of ' + total + ' cells filled');
+    this._setText(this.el.hudProgress, tr('{n} of {total} cells filled', { n: filled, total }));
     this._setText(this.el.hudAnalysis,
-      this._ana.matched + ' matched · ' + this._ana.mismatched + ' mismatched · ' + this._ana.open + ' open');
+      tr('{matched} matched · {mismatched} mismatched · {open} open', { matched: this._ana.matched, mismatched: this._ana.mismatched, open: this._ana.open }));
 
     this._writeScore(this._hudScoreEls, vm.score || state.score);
 
     const movesLeft = vm.movesLeft != null ? vm.movesLeft
       : (state.moveLimit != null ? Math.max(0, state.moveLimit - state.movesUsed) : null);
     this.el.hudMoves.hidden = movesLeft == null;
-    if (movesLeft != null) this._setText(this.el.hudMoves, 'Moves left: ' + movesLeft);
+    if (movesLeft != null) this._setText(this.el.hudMoves, tr('Moves left: {n}', { n: movesLeft }));
 
     const timeLeft = vm.timeLeftMs != null ? vm.timeLeftMs
       : (state.timeLimitMs != null ? Math.max(0, state.timeLimitMs - (vm.elapsedMs || 0)) : null);
     this.el.hudTime.hidden = timeLeft == null;
-    if (timeLeft != null) this._setText(this.el.hudTime, 'Time: ' + fmtMs(timeLeft));
+    if (timeLeft != null) this._setText(this.el.hudTime, tr('Time: {time}', { time: fmtMs(timeLeft) }));
 
     this.el.hudRanked.hidden = !vm.ranked;
 
@@ -789,18 +843,18 @@ export class UI {
 
   _statusSummary(vm) {
     const parts = [];
-    if (vm.mode && MODES[vm.mode]) parts.push(MODES[vm.mode].label);
-    if (vm.ranked) parts.push('ranked');
+    if (vm.mode && MODES[vm.mode]) parts.push(tr(MODES[vm.mode].label));
+    if (vm.ranked) parts.push(tr('ranked'));
     const total = vm.state.cells.length;
     const filled = vm.state.cells.filter((c) => c !== null).length;
-    parts.push(filled + '/' + total + ' placed');
+    parts.push(tr('{n}/{total} placed', { n: filled, total }));
     const movesLeft = vm.movesLeft != null ? vm.movesLeft
       : (vm.state.moveLimit != null ? Math.max(0, vm.state.moveLimit - vm.state.movesUsed) : null);
-    if (movesLeft != null) parts.push(movesLeft + ' moves left');
+    if (movesLeft != null) parts.push(tr('{n} moves left', { n: movesLeft }));
     const timeLeft = vm.timeLeftMs != null ? vm.timeLeftMs
       : (vm.state.timeLimitMs != null ? Math.max(0, vm.state.timeLimitMs - (vm.elapsedMs || 0)) : null);
     if (timeLeft != null) parts.push(fmtMs(timeLeft));
-    if (vm.score) parts.push('score ' + vm.score.total);
+    if (vm.score) parts.push(tr('score {n}', { n: vm.score.total }));
     return parts.join(' · ');
   }
 
@@ -842,22 +896,22 @@ export class UI {
     for (const e of events) {
       switch (e.type) {
         case 'invalid': {
-          const msg = REASON_TEXT[e.reason] || 'That move is not allowed.';
-          this.announce(msg, true);
-          this.toast(msg, 'warn');
-          this._caption('not allowed');
+          const key = REASON_TEXT[e.reason] || N('That move is not allowed.');
+          this.announce(tr(key), true);
+          this.toast(() => tr(key), 'warn');
+          this._caption(N('not allowed'));
           break;
         }
         case 'terminal': {
-          const msg = 'Round over — results are ready.';
-          this.announce(msg, true);
-          this.toast(msg, 'info');
-          this._caption(e.reason === 'complete' ? 'mosaic complete' : 'round over');
+          const key = N('Round over — results are ready.');
+          this.announce(tr(key), true);
+          this.toast(() => tr(key), 'info');
+          this._caption(e.reason === 'complete' ? N('mosaic complete') : N('round over'));
           break;
         }
         case 'lock':
-          this.announce('Card locked.');
-          this._caption('card locked');
+          this.announce(tr('Card locked.'));
+          this._caption(N('card locked'));
           break;
         case 'board':
           if (this._prevMatched != null && e.matched > this._prevMatched) {
@@ -865,11 +919,11 @@ export class UI {
           }
           this._prevMatched = e.matched;
           break;
-        case 'place': this._caption('card placed'); break;
-        case 'recall': this._caption('card recalled'); break;
-        case 'swap': this._caption('cards swapped'); break;
-        case 'rotateTray': this._caption('card rotated'); break;
-        case 'undo': this.toast('Undone', 'info'); this._caption('undo'); break;
+        case 'place': this._caption(N('card placed')); break;
+        case 'recall': this._caption(N('card recalled')); break;
+        case 'swap': this._caption(N('cards swapped')); break;
+        case 'rotateTray': this._caption(N('card rotated')); break;
+        case 'undo': this.toast(() => tr('Undone'), 'info'); this._caption(N('undo')); break;
         default: break; // duplicate, terminal-pending: no UI noise
       }
     }
@@ -907,14 +961,15 @@ export class UI {
 
   resultsView(data) {
     if (!data) return;
+    this._resultsData = data;
     const r = data.result || {};
     const headlines = {
-      complete: 'Mosaic complete!',
-      'moves-exhausted': 'Out of moves',
-      'time-up': 'Time is up',
-      conceded: 'Round conceded',
+      complete: N('Mosaic complete!'),
+      'moves-exhausted': N('Out of moves'),
+      'time-up': N('Time is up'),
+      conceded: N('Round conceded'),
     };
-    this._setText(this.el.resultsHeadline, headlines[r.terminalReason] || 'Round over');
+    this._setText(this.el.resultsHeadline, tr(headlines[r.terminalReason] || N('Round over')));
 
     // Outcome illustration (assets/results-*.webp); decorative, hidden on load failure.
     const art = this.root.getElementById('results-art');
@@ -928,14 +983,14 @@ export class UI {
     }
 
     const bits = [];
-    if (r.elapsedMs != null) bits.push('Time ' + fmtMs(r.elapsedMs));
-    if (r.movesUsed != null) bits.push(r.movesUsed + ' moves');
+    if (r.elapsedMs != null) bits.push(tr('Time {time}', { time: fmtMs(r.elapsedMs) }));
+    if (r.movesUsed != null) bits.push(tr('{n} moves', { n: r.movesUsed }));
     this._setText(this.el.resultsSub, bits.join(' · '));
 
     if (data.stars != null && data.stars > 0) {
       this.el.resultsStars.hidden = false;
       this._setText(this.el.resultsStars, '★'.repeat(data.stars) + '☆'.repeat(3 - data.stars));
-      this.el.resultsStars.setAttribute('aria-label', data.stars + ' of 3 stars');
+      this.el.resultsStars.setAttribute('aria-label', tr('{n} of 3 stars', { n: data.stars }));
     } else {
       this.el.resultsStars.hidden = true;
     }
@@ -945,7 +1000,7 @@ export class UI {
       const dl = this.el.resultsBreakdown;
       dl.textContent = '';
       for (const row of data.breakdown) {
-        dl.appendChild(el('dt', null, String(row.label)));
+        dl.appendChild(el('dt', null, tr(String(row.label))));
         dl.appendChild(el('dd', null, String(row.value)));
       }
     } else if (r.score) {
@@ -956,11 +1011,11 @@ export class UI {
     let parText = '';
     if (data.par && typeof data.par === 'object') {
       const parts = [];
-      if (data.par.moves != null) parts.push(data.par.moves + ' moves');
+      if (data.par.moves != null) parts.push(tr('{n} moves', { n: data.par.moves }));
       if (data.par.ms != null) parts.push(fmtMs(data.par.ms));
-      parText = parts.length ? 'Par: ' + parts.join(' · ') : '';
+      parText = parts.length ? tr('Par: {par}', { par: parts.join(' · ') }) : '';
     } else if (data.par) {
-      parText = 'Par: ' + data.par;
+      parText = tr('Par: {par}', { par: data.par });
     }
     this._setText(this.el.resultsPar, parText);
 
@@ -971,15 +1026,15 @@ export class UI {
       host.textContent = '';
       for (const a of ach) {
         const name = a.name || (ACHIEVEMENTS.find((x) => x.key === a.key) || {}).name || a.key;
-        host.appendChild(el('p', 'unlock', 'Achievement unlocked: ' + name));
+        host.appendChild(el('p', 'unlock', tr('Achievement unlocked: {name}', { name: tr(name) })));
       }
     }
 
     this._setText(this.el.resultsBoard,
-      data.boardEntry ? 'Leaderboard: ' + data.boardEntry : '');
+      data.boardEntry ? tr('Leaderboard: {entry}', { entry: data.boardEntry }) : '');
 
-    const next = data.nextAction || { label: 'Next', action: 'next' };
-    this._setText(this.el.btnResultsNext, next.label || 'Next');
+    const next = data.nextAction || { label: N('Next'), action: 'next' };
+    this._setText(this.el.btnResultsNext, tr(next.label || N('Next')));
     this.el.btnResultsNext.dataset.action = next.action || 'next';
   }
 
@@ -987,8 +1042,10 @@ export class UI {
   setLeaderboardLine(text) {
     const line = this.el.resultsLb;
     if (!line) return;
-    line.hidden = !text;
-    line.textContent = text || '';
+    this._lbText = text;
+    const s = typeof text === 'function' ? text() : text;
+    line.hidden = !s;
+    line.textContent = s || '';
   }
 
   // ---------------------------------------------------------------- journey
@@ -1007,7 +1064,7 @@ export class UI {
     }
     for (const [num, list] of chapters) {
       const section = el('section', 'journey-chapter');
-      section.appendChild(el('h3', null, 'Chapter ' + num));
+      section.appendChild(el('h3', null, tr('Chapter {n}', { n: num })));
       const ul = el('ul', 'stage-list');
       list.forEach((st, i) => {
         const rec = stages[st.id] || {};
@@ -1023,12 +1080,12 @@ export class UI {
         const btn = el('button', 'btn stage-btn');
         btn.type = 'button';
         btn.disabled = !unlocked;
-        btn.appendChild(el('span', 'stage-name', st.name));
+        btn.appendChild(el('span', 'stage-name', stageName(st.name)));
         btn.appendChild(el('span', 'stage-stars',
           completed ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '·'));
         btn.setAttribute('aria-label',
-          st.name + (completed ? ', complete, ' + stars + ' of 3 stars' : unlocked ? ', available' : ', locked'));
-        if (!unlocked) btn.appendChild(el('span', 'stage-lock', 'Locked'));
+          stageName(st.name) + (completed ? tr(', complete, {n} of 3 stars', { n: stars }) : unlocked ? tr(', available') : tr(', locked')));
+        if (!unlocked) btn.appendChild(el('span', 'stage-lock', tr('Locked')));
         if (unlocked) {
           btn.addEventListener('click', () => this._call('onJourneyStage', st.index));
         }
@@ -1054,27 +1111,26 @@ export class UI {
     this.el.btnBoardsFriends.setAttribute('aria-pressed', isGlobal ? 'false' : 'true');
 
     this._setText(this.el.boardsNote, validated
-      ? (isGlobal ? 'Global board — validated scores.' : 'Friends board — validated scores.')
-      : 'Casual board — these scores are not validated.');
+      ? tr(isGlobal ? 'Global board — validated scores.' : 'Friends board — validated scores.')
+      : tr('Casual board — these scores are not validated.'));
 
     const list = this.el.boardsList;
     list.textContent = '';
     const shown = entries.filter((e) => (isGlobal ? !e.friend : true));
     if (!shown.length) {
-      const li = el('li', null, 'No scores yet — be the first.');
+      const li = el('li', null, tr('No scores yet — be the first.'));
       list.appendChild(li);
       return;
     }
     shown.forEach((e, i) => {
       const li = el('li', e.you ? 'you' : null);
-      const name = el('span', 'entry-name', (e.name || 'Anonymous') +
-        (e.casual ? ' (casual)' : ''));
+      const name = el('span', 'entry-name', (e.name || tr('Anonymous')) +
+        (e.casual ? ' ' + tr('(casual)') : ''));
       const score = el('span', 'entry-score', String(e.score != null ? e.score : ''));
       li.appendChild(name);
       li.appendChild(score);
-      li.setAttribute('aria-label', 'Rank ' + (i + 1) + ', ' +
-        (e.name || 'Anonymous') + ', ' + (e.score != null ? e.score : 0) + ' points' +
-        (e.casual ? ', casual' : ''));
+      li.setAttribute('aria-label', tr('Rank {n}, {name}, {score} points', { n: i + 1, name: e.name || tr('Anonymous'), score: e.score != null ? e.score : 0 }) +
+        (e.casual ? tr(', casual') : ''));
       list.appendChild(li);
     });
   }
@@ -1089,7 +1145,7 @@ export class UI {
       // Hosted: the name comes from the platform account and is read-only;
       // the free-text field is the offline fallback.
       this.el.profileName.disabled = true;
-      this.el.profileName.setAttribute('aria-label', 'Display name (platform account)');
+      this.el.profileName.setAttribute('aria-label', tr('Display name (platform account)'));
     } else {
       this.el.profileName.disabled = false;
     }
@@ -1101,7 +1157,7 @@ export class UI {
         syncEl = el('p', 'profile-sync dim');
         this.el.profileStats.parentElement.insertBefore(syncEl, this.el.profileStats);
       }
-      syncEl.textContent = data.sync;
+      syncEl.textContent = txt(data.sync);
     } else if (syncEl) {
       syncEl.remove();
     }
@@ -1111,15 +1167,15 @@ export class UI {
     const rows = [];
     const p = data.progress || {};
     const journeyDone = Object.values(p.journey || {}).filter((s) => s.completed).length;
-    rows.push(['Sessions played', data.sessionsPlayed != null ? data.sessionsPlayed : (p.sessionsPlayed || 0)]);
-    rows.push(['Journey stages complete', journeyDone + ' of ' + JOURNEY.length]);
-    rows.push(['Mastery XP', p.masteryXp || 0]);
-    if (p.streak) rows.push(['Daily streak', (p.streak.count || 0) + ' days']);
+    rows.push([N('Sessions played'), data.sessionsPlayed != null ? data.sessionsPlayed : (p.sessionsPlayed || 0)]);
+    rows.push([N('Journey stages complete'), tr('{n} of {total}', { n: journeyDone, total: JOURNEY.length })]);
+    rows.push([N('Mastery XP'), p.masteryXp || 0]);
+    if (p.streak) rows.push([N('Daily streak'), tr('{n} days', { n: p.streak.count || 0 })]);
     if (Array.isArray(data.stats)) {
       for (const s of data.stats) rows.push([s.label, s.value]);
     }
     for (const [label, value] of rows) {
-      stats.appendChild(el('dt', null, String(label)));
+      stats.appendChild(el('dt', null, tr(String(label))));
       stats.appendChild(el('dd', null, String(value)));
     }
 
@@ -1129,10 +1185,10 @@ export class UI {
     for (const a of ACHIEVEMENTS) {
       const got = unlocked[a.key];
       const li = el('li', got ? null : 'locked-ach');
-      li.appendChild(el('span', 'ach-name', a.name));
-      li.appendChild(el('span', 'ach-desc', a.desc));
+      li.appendChild(el('span', 'ach-name', tr(a.name)));
+      li.appendChild(el('span', 'ach-desc', tr(a.desc)));
       li.appendChild(el('span', 'ach-date',
-        got ? 'Unlocked ' + String(got).slice(0, 10) : 'Not yet unlocked'));
+        got ? tr('Unlocked {date}', { date: String(got).slice(0, 10) }) : tr('Not yet unlocked')));
       grid.appendChild(li);
     }
   }
@@ -1348,16 +1404,16 @@ export class UI {
     for (const mode of Object.keys(MODES)) {
       const m = MODES[mode];
       const meta = MODE_META[mode] || {};
-      const assists = [m.undoAllowed && 'Undo', m.hintAllowed && 'Hint'].filter(Boolean).join(', ') || 'None';
+      const assists = [m.undoAllowed && tr('Undo'), m.hintAllowed && tr('Hint')].filter(Boolean).join(', ') || tr('None');
       const card = el('button', 'btn mode-card');
       card.type = 'button';
       card.dataset.mode = mode;
-      card.appendChild(el('span', 'mode-name', m.label || mode));
-      card.appendChild(el('p', 'mode-blurb', meta.blurb || ''));
+      card.appendChild(el('span', 'mode-name', tr(m.label || mode)));
+      card.appendChild(el('p', 'mode-blurb', tr(meta.blurb || '')));
       card.appendChild(el('p', 'mode-meta',
-        (meta.duration || '') + ' · 1 player · Assists: ' + assists));
+        tr('{duration} · 1 player · Assists: {assists}', { duration: tr(meta.duration || ''), assists })));
       const badge = el('span', 'badge ' + (m.ranked ? 'ranked' : 'casual'),
-        m.ranked ? 'Ranked' : 'Casual');
+        tr(m.ranked ? 'Ranked' : 'Casual'));
       card.appendChild(badge);
       card.addEventListener('click', () => this._onModeCard(mode));
       host.appendChild(card);
@@ -1384,12 +1440,12 @@ export class UI {
       const li = el('li');
       const btn = el('button', 'btn lesson-btn');
       btn.type = 'button';
-      const name = el('span', 'lesson-name', l.name);
+      const name = el('span', 'lesson-name', tr(l.name));
       if (done[l.id] && done[l.id].completed) {
         name.appendChild(el('span', 'lesson-done', ' ✓'));
       }
       btn.appendChild(name);
-      btn.appendChild(el('span', 'lesson-intro', l.intro));
+      btn.appendChild(el('span', 'lesson-intro', tr(l.intro)));
       btn.addEventListener('click', () => this._call('onLesson', l.id));
       li.appendChild(btn);
       host.appendChild(li);
@@ -1404,25 +1460,26 @@ export class UI {
     // main.js supplies a richer payload (title/rules/duration/assists/start);
     // fall back to the static metadata when it does not.
     this._setupStartFn = typeof data.start === 'function' ? data.start : null;
-    this._setText(this.el.setupTitle, data.title || m.label || mode);
-    this._setText(this.el.setupBlurb, data.rules || meta.blurb || '');
+    this._setupData = data;
+    this._setText(this.el.setupTitle, txt(data.title || m.label || mode));
+    this._setText(this.el.setupBlurb, txt(data.rules || meta.blurb || ''));
     const ranked = data.ranked != null ? data.ranked : m.ranked;
     this._setText(this.el.setupRanked, ranked
-      ? 'Ranked — the result counts toward leaderboards.'
-      : 'Unranked — casual play, no rating effects.');
+      ? tr('Ranked — the result counts toward leaderboards.')
+      : tr('Unranked — casual play, no rating effects.'));
 
     const assistsText = data.assists
-      ? [data.assists.undo && 'Undo', data.assists.hints && 'Hint'].filter(Boolean).join(', ') || 'None'
-      : [m.undoAllowed && 'Undo', m.hintAllowed && 'Hint'].filter(Boolean).join(', ') || 'None';
+      ? [data.assists.undo && tr('Undo'), data.assists.hints && tr('Hint')].filter(Boolean).join(', ') || tr('None')
+      : [m.undoAllowed && tr('Undo'), m.hintAllowed && tr('Hint')].filter(Boolean).join(', ') || tr('None');
     const dl = this.el.setupMeta;
     dl.textContent = '';
     const rows = [
-      ['Expected duration', data.duration || meta.duration || 'a few minutes'],
-      ['Players', String(data.players != null ? data.players : 1)],
-      ['Assists', assistsText],
+      [N('Expected duration'), txt(data.duration || meta.duration || N('a few minutes'))],
+      [N('Players'), String(data.players != null ? data.players : 1)],
+      [N('Assists'), assistsText],
     ];
     for (const [k, v] of rows) {
-      dl.appendChild(el('dt', null, k));
+      dl.appendChild(el('dt', null, tr(k)));
       dl.appendChild(el('dd', null, v));
     }
 
@@ -1436,9 +1493,9 @@ export class UI {
       for (const d of difficulties) {
         const b = el('button', 'btn');
         b.type = 'button';
-        b.appendChild(el('span', null, d.name));
+        b.appendChild(el('span', null, tr(d.name)));
         b.appendChild(el('span', 'opt-blurb',
-          d.params.w + '×' + d.params.h + ' board, ' + d.params.removed + ' cards in tray'));
+          tr('{w}×{h} board, {n} cards in tray', { w: d.params.w, h: d.params.h, n: d.params.removed })));
         b.addEventListener('click', () => {
           if (this._setupStartFn) this._setupStartFn(d.id);
           else this._call('onPractice', d.id);
@@ -1449,8 +1506,8 @@ export class UI {
       for (const c of challenges) {
         const b = el('button', 'btn');
         b.type = 'button';
-        b.appendChild(el('span', null, c.name));
-        b.appendChild(el('span', 'opt-blurb', c.blurb));
+        b.appendChild(el('span', null, tr(c.name)));
+        b.appendChild(el('span', 'opt-blurb', tr(c.blurb)));
         b.addEventListener('click', () => this._call('onChallenge', c.id));
         opts.appendChild(b);
       }
@@ -1472,7 +1529,7 @@ export class UI {
       const sw = el('span', 'swatch');
       sw.style.background = 'linear-gradient(135deg, ' + full.bg + ' 0%, ' + full.felt + ' 55%, ' + full.accent + ' 100%)';
       b.appendChild(sw);
-      b.appendChild(el('span', null, t.name));
+      b.appendChild(el('span', null, tr(t.name)));
       b.addEventListener('click', () => {
         this._settingsChanged((s) => { s.graphics.theme = t.id; });
         this.applySettings(this._settings);
@@ -1543,7 +1600,7 @@ export class UI {
     this.el.profileForm.addEventListener('submit', (e) => {
       e.preventDefault();
       this._call('onProfileSave', this.el.profileName.value.trim());
-      this.toast('Display name saved', 'success');
+      this.toast(() => tr('Display name saved'), 'success');
     });
 
     // Boards scope toggle (client-side filter over the last supplied boards)
@@ -1561,16 +1618,16 @@ export class UI {
     on('btn-pause-accessibility', () => this.openOverlay('settings', { tab: 'accessibility' }));
     on('btn-pause-help', () => this.openOverlay('help'));
     on('btn-pause-restart', () => this.openOverlay('confirm', {
-      title: 'Restart round?', message: 'The current arrangement will be discarded.',
-      confirmLabel: 'Restart', action: 'restart',
+      title: N('Restart round?'), message: N('The current arrangement will be discarded.'),
+      confirmLabel: N('Restart'), action: 'restart',
     }));
     on('btn-pause-concede', () => this.openOverlay('confirm', {
-      title: 'Concede round?', message: 'The round ends now and is scored as conceded.',
-      confirmLabel: 'Concede', action: 'concede',
+      title: N('Concede round?'), message: N('The round ends now and is scored as conceded.'),
+      confirmLabel: N('Concede'), action: 'concede',
     }));
     on('btn-pause-leave', () => this.openOverlay('confirm', {
-      title: 'Leave round?', message: 'You can resume later from the last saved position.',
-      confirmLabel: 'Leave', action: 'leave',
+      title: N('Leave round?'), message: N('You can resume later from the last saved position.'),
+      confirmLabel: N('Leave'), action: 'leave',
     }));
 
     // Confirm dialog

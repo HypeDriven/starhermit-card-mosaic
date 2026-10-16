@@ -33,7 +33,7 @@
           aria-controls="rail-left" aria-expanded="false">
     <span aria-hidden="true">☰</span><span class="btn-sub"> Goal</span>
   </button>
-  <p id="status-line" role="status" aria-live="polite">Card Mosaic</p>
+  <p id="status-line" role="status" aria-live="polite" data-i18n-skip>Card Mosaic</p>
   <button id="btn-drawer-right" class="icon-btn drawer-toggle" type="button"
           aria-controls="rail-right" aria-expanded="false">
     <span class="btn-sub">Actions </span><span aria-hidden="true">☰</span>
@@ -60,7 +60,7 @@
     <div class="screen-panel title-panel">
       <img id="title-art" class="title-art" src="./assets/key-art.webp" width="1280" height="720"
            alt="" onerror="this.hidden=true">
-      <h1 id="title-h" tabindex="-1">Card Mosaic</h1>
+      <h1 id="title-h" tabindex="-1" data-i18n-skip>Card Mosaic</h1>
       <p class="tagline">Place edge-coded cards so the artwork connects —
         a quiet puzzle on a studio card table.</p>
       <div id="title-resume" class="row title-resume" hidden>
@@ -530,6 +530,9 @@
 <div id="toasts" aria-hidden="true"></div>
 <p id="captions" class="captions" hidden></p>
 
+<script src="sh-language.js"></script>
+<script src="js/strings.js"></script>
+<script src="js/i18n.js"></script>
 <script type="module" src="./js/main.js"></script>
 </body>
 </html>

@@ -15,7 +15,7 @@ import {
   loadSettings, saveSettings, loadProgress, saveProgress, journeyStars,
   loadAchievements, saveAchievements, unlockAchievement, ACHIEVEMENTS,
   loadBoards, saveBoards, saveSnapshot, loadSnapshot, clearSnapshot,
-  analyticsSessionId,
+  analyticsSessionId, mergeProgress, mergeAchievements, mergeBoards,
 } from './storage.js';
 import { Platform } from './platform.js';
 import { platformStrings, fmtPlatform } from './platform-strings.js';
@@ -30,6 +30,10 @@ try {
 }
 
 const $ = (sel) => document.querySelector(sel);
+/** Localized text (js/i18n.js); English source strings are the keys. */
+const tr = (key, vars) => (globalThis.CMI18N ? globalThis.CMI18N.T(key, vars) : key);
+/** Marks an English key that is translated with tr() when shown. */
+const N = (s) => s;
 
 // ---------------------------------------------------------------------------
 // App
@@ -87,7 +91,7 @@ class App {
     this.ui = new UI(document, this._handlers());
     this.ui.applySettings(this.settings);
     this.ui.showScreen('loading');
-    this.ui.setLoading(0.1, 'Rules');
+    this.ui.setLoading(0.1, tr('Rules'));
 
     // service worker (offline after initial load); ignore failures
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
@@ -95,7 +99,7 @@ class App {
     }
 
     await this.platform.init();
-    this.ui.setLoading(0.35, 'Studio');
+    this.ui.setLoading(0.35, tr('Studio'));
 
     // Hosted: resolve the account nickname, then prefer the remote save
     // (cloud slot) over the local cache before anything reads progress.
@@ -126,14 +130,18 @@ class App {
     await this.platform.loadBindings();
     this.ui.renderBindings(this.platform.bindings);
     this.platform.onAuth((a) => {
-      if (!a.signedIn) this.ui.toast(platformStrings(document.documentElement.lang).signedOut, 'info');
+      if (!a.signedIn) this.ui.toast(() => platformStrings(document.documentElement.lang).signedOut, 'info');
       this.ui.setPlatformButtons(this._platformState());
     });
+    // Another device saved first: merge both sides and save again.
+    this.platform.onConflict((remote) => this._mergeCloud(remote));
+    // Language change: every code-built string re-renders; the round is untouched.
+    document.addEventListener('cm-language', () => this._onLanguage());
 
     const t = await this.platform.getServerTime();
     this.serverOffset = t.offsetMs;
     this.serverTimeSource = t.source;
-    this.ui.setLoading(0.5, 'Table');
+    this.ui.setLoading(0.5, tr('Table'));
 
     // renderer
     if (Renderer && Renderer.isSupported()) {
@@ -149,17 +157,17 @@ class App {
         this.renderer = null;
       }
     }
-    this.ui.setLoading(0.8, 'Cards');
+    this.ui.setLoading(0.8, tr('Cards'));
 
     this.ui.refreshGraphics();
     this._bindGlobal();
-    this.ui.setLoading(1, 'Ready');
+    this.ui.setLoading(1, tr('Ready'));
     this._transition('title');
 
     // resume offer
     const snap = loadSnapshot();
     if (snap && snap.content) {
-      this.ui.toast('An interrupted round was saved — Resume from the title screen.', 'info');
+      this.ui.toast(() => tr('An interrupted round was saved — Resume from the title screen.'), 'info');
     }
     this.platform.activityStart({ build: BUILD_VERSION });
   }
@@ -175,6 +183,30 @@ class App {
       settings: this.settings, progress: this.progress,
       achievements: this.achievements, boards: this.boards,
     };
+  }
+
+  /**
+   * Save conflict (another device wrote the cloud slot since our last load):
+   * keep the better of both sides — journey records (completed on either
+   * device, more stars, higher best, fewer moves), lessons, dailies,
+   * challenges, the larger counters, every achievement (earliest unlock) and
+   * both local boards — keep this device's settings and the round in play,
+   * then save the merge again.
+   */
+  _mergeCloud(remote) {
+    if (remote && typeof remote === 'object') {
+      if (remote.progress) { this.progress = mergeProgress(this.progress, remote.progress); saveProgress(this.progress); }
+      if (remote.achievements) { this.achievements = mergeAchievements(this.achievements, remote.achievements); saveAchievements(this.achievements); }
+      if (remote.boards) { this.boards = mergeBoards(this.boards, remote.boards); saveBoards(this.boards); }
+      if (this.phase === 'title') this._transition('title');
+    }
+    this._mirrorCloud();
+  }
+
+  _onLanguage() {
+    if (!this.ui) return;
+    this.ui.relocalize();
+    if (this.session) this._pushView();
   }
 
   _applyCloud(doc) {
@@ -294,11 +326,12 @@ class App {
   }
 
   _phaseAnnouncement(phase) {
-    return {
-      title: 'Title screen', 'mode-select': 'Choose a mode', preparing: 'Round setup',
-      active: 'Round started', paused: 'Paused', results: 'Round results',
-      progression: 'Journey map',
-    }[phase] || phase;
+    const key = {
+      title: N('Title screen'), 'mode-select': N('Choose a mode'), preparing: N('Round setup'),
+      active: N('Round started'), paused: N('Paused'), results: N('Round results'),
+      progression: N('Journey map'),
+    }[phase];
+    return key ? tr(key) : phase;
   }
 
   // -------------------------------------------------------------------------
@@ -453,7 +486,7 @@ class App {
     }
     if (!occupied && this.selectedCell !== null) {
       // move = recall + place would chain two commands; explain instead
-      this.ui.toast('Recall the card first, then place it here.', 'warn');
+      this.ui.toast(() => tr('Recall the card first, then place it here.'), 'warn');
       this.audio.playEvent('invalid');
       return;
     }
@@ -469,7 +502,7 @@ class App {
         return;
       }
     } else if (this.selectedTray === null) {
-      this.ui.toast('Select a tray card first.', 'info');
+      this.ui.toast(() => tr('Select a tray card first.'), 'info');
     }
     this._pushView();
   }
@@ -545,7 +578,7 @@ class App {
       this._telemetry('tutorial-step', { lesson: this.lesson.id, step: step.id });
       this.audio.playEvent('hint');
       if (steps[this.lessonStepIndex]) {
-        this.ui.announce(steps[this.lessonStepIndex].text);
+        this.ui.announce(tr(steps[this.lessonStepIndex].text));
       }
     }
   }
@@ -611,13 +644,13 @@ class App {
   _scoreBreakdown(result) {
     const s = result.score;
     const rows = [
-      { label: 'Matched edges', value: s.matched },
-      { label: 'Locked cards', value: s.locks },
-      { label: 'Completion bonus', value: s.completion },
-      { label: 'Time bonus', value: s.timeBonus },
-      { label: 'Swap penalty', value: -s.swapPenalty },
-      { label: 'Invalid actions', value: -s.invalidPenalty },
-      { label: 'Total', value: s.total, total: true },
+      { label: N('Matched edges'), value: s.matched },
+      { label: N('Locked cards'), value: s.locks },
+      { label: N('Completion bonus'), value: s.completion },
+      { label: N('Time bonus'), value: s.timeBonus },
+      { label: N('Swap penalty'), value: -s.swapPenalty },
+      { label: N('Invalid actions'), value: -s.invalidPenalty },
+      { label: N('Total'), value: s.total, total: true },
     ];
     return rows;
   }
@@ -698,7 +731,7 @@ class App {
       const meta = ACHIEVEMENTS.find((a) => a.key === key);
       // unlocks happen as a round resolves and the results screen lists them,
       // so no toast (it would cover the breakdown); screen readers still hear it
-      this.ui.announce(`Achievement unlocked: ${meta?.name || key}`);
+      this.ui.announce(tr('Achievement unlocked: {name}', { name: tr(meta?.name || key) }));
       this.audio.playEvent('achievement');
       // mirror to the host when hosted; idempotent server-side, best effort
       this.platform.postAchievement(key).catch(() => {});
@@ -710,21 +743,21 @@ class App {
   _nextAction() {
     if (this.mode === 'journey' && this.stageIndex !== null && this.session.result.terminalReason === TERMINAL.COMPLETE) {
       const next = this.stageIndex + 1;
-      if (next < JOURNEY.length) return { label: 'Next stage', action: 'next' };
-      return { label: 'Journey complete — back to map', action: 'map' };
+      if (next < JOURNEY.length) return { label: N('Next stage'), action: 'next' };
+      return { label: N('Journey complete — back to map'), action: 'map' };
     }
     if (this.mode === 'learn') {
       const idx = LESSONS.findIndex((l) => l.id === this.lesson.id);
-      if (idx >= 0 && idx + 1 < LESSONS.length) return { label: 'Next lesson', action: 'next' };
-      return { label: 'Lessons done — to title', action: 'title' };
+      if (idx >= 0 && idx + 1 < LESSONS.length) return { label: N('Next lesson'), action: 'next' };
+      return { label: N('Lessons done — to title'), action: 'title' };
     }
-    return { label: 'Play again', action: 'retry' };
+    return { label: N('Play again'), action: 'retry' };
   }
 
   // Signed in, every finished non-lesson round posts its total to the
   // platform high-score board; the results screen shows the rank.
   _postHighScore(result) {
-    const show = (key, vars) => this.ui.setLeaderboardLine(key ? fmtPlatform(platformStrings(document.documentElement.lang)[key], vars) : '');
+    const show = (key, vars) => this.ui.setLeaderboardLine(key ? () => fmtPlatform(platformStrings(document.documentElement.lang)[key], vars) : '');
     if (!this.platform.hosted || this.mode === 'learn') { show(null); return; }
     show('lbPosting');
     const total = Math.max(0, Math.round(result.score.total));
@@ -742,7 +775,7 @@ class App {
       at: new Date(this.now()).toISOString(),
       assists: result.assists,
       sessionId: result.sessionId,
-      name: this.profileName() || 'Guest',
+      name: this.profileName() || tr('Guest'),
     };
     const list = this.boards.entries[boardKey] || [];
     list.push(entry);
@@ -757,12 +790,12 @@ class App {
         board: boardKey,
         entry: {
           result, replay,
-          name: this.profileName() || 'You',
+          name: this.profileName() || tr('You'),
           playerId: this.platform.userId || undefined,
         },
       });
       if (!resp.ok && resp.error !== 'offline') {
-        this.ui.toast('Score submission failed: ' + resp.error, 'warn');
+        this.ui.toast(() => tr('Score submission failed: {error}', { error: resp.error }), 'warn');
       }
     }
   }
@@ -773,11 +806,12 @@ class App {
     return hostedName || this._profileName || '';
   }
 
+  /** English key of the cloud-sync line (translated where shown). */
   syncText() {
-    if (!this.platform.hosted) return 'Offline — progress saves on this device.';
-    return this.platform.sync === 'synced' ? 'Cloud save synced.'
-      : this.platform.sync === 'saving' ? 'Saving to cloud…'
-      : 'Cloud sync unavailable — local copy is current.';
+    if (!this.platform.hosted) return N('Offline — progress saves on this device.');
+    return this.platform.sync === 'synced' ? N('Cloud save synced.')
+      : this.platform.sync === 'saving' ? N('Saving to cloud…')
+      : N('Cloud sync unavailable — local copy is current.');
   }
 
   // -------------------------------------------------------------------------
@@ -833,7 +867,7 @@ class App {
       if (left > 0 && left <= 10000) {
         this._timeWarned = true;
         this.audio.playEvent('timeWarning');
-        this.ui.announce('Ten seconds left.', true);
+        this.ui.announce(tr('Ten seconds left.'), true);
       }
     }
     const now = performance.now();
@@ -861,7 +895,8 @@ class App {
         // "while you were away" — solo simulation paused, clock preserved
         const awayMs = this.pausedAt ? performance.now() - this.pausedAt : 0;
         const mins = Math.floor(awayMs / 60000);
-        this.ui.toast(`Welcome back — paused for ${mins > 0 ? mins + ' min' : Math.round(awayMs / 1000) + ' s'}. Your clock was stopped.`, 'info');
+        const away = mins > 0 ? tr('{n} min', { n: mins }) : tr('{n} s', { n: Math.round(awayMs / 1000) });
+        this.ui.toast(() => tr('Welcome back — paused for {time}. Your clock was stopped.', { time: away }), 'info');
         this._wasAutoPaused = false;
         this.platform.getServerTime().then((t) => { this.serverOffset = t.offsetMs; });
       }
@@ -971,7 +1006,7 @@ class App {
           this._saveSnapshot();
           this._clearSelection();
         } else {
-          this.ui.toast('Undo is not available here.', 'warn');
+          this.ui.toast(() => tr('Undo is not available here.'), 'warn');
         }
       },
       onHint: () => {
@@ -980,10 +1015,10 @@ class App {
         if (h) {
           this.hintData = h;
           this.audio.playEvent('hint');
-          this.ui.announce(h.text);
+          this.ui.announce(tr(h.text));
           this._pushView();
         } else {
-          this.ui.toast('No hint available right now.', 'info');
+          this.ui.toast(() => tr('No hint available right now.'), 'info');
         }
       },
       onRotate: () => {
@@ -1058,9 +1093,8 @@ class App {
       onPlatformState: () => this._platformState(),
       onSignIn: () => this.platform.signIn(),
       onInvite: async () => {
-        const T = platformStrings(document.documentElement.lang);
         const ok = await this.platform.copyInvite();
-        this.ui.toast(ok ? T.inviteCopied : T.inviteFailed, ok ? 'success' : 'warn');
+        this.ui.toast(() => platformStrings(document.documentElement.lang)[ok ? 'inviteCopied' : 'inviteFailed'], ok ? 'success' : 'warn');
       },
       onKeyAction: (e) => this.platform.actionFor(e),
       onControlsReset: () => {
@@ -1108,9 +1142,9 @@ class App {
     if (mode === 'daily') {
       return {
         ...base,
-        title: 'Daily Mosaic — ' + (this.dailyDateKey || this.utcToday()),
-        rules: 'One shared seed for everyone today. Complete the mosaic; fewest invalid actions and fastest time break ties.',
-        duration: '5–10 min',
+        title: ((date) => () => tr('Daily Mosaic — {date}', { date }))(this.dailyDateKey || this.utcToday()),
+        rules: N('One shared seed for everyone today. Complete the mosaic; fewest invalid actions and fastest time break ties.'),
+        duration: N('5–10 min'),
         start: () => this._startRound(content, 'daily'),
         content,
       };
@@ -1118,9 +1152,9 @@ class App {
     if (mode === 'practice') {
       return {
         ...base,
-        title: 'Practice',
-        rules: 'Unranked. Undo and hints allowed. Pick a difficulty.',
-        duration: '3–15 min',
+        title: N('Practice'),
+        rules: N('Unranked. Undo and hints allowed. Pick a difficulty.'),
+        duration: N('3–15 min'),
         difficulties: PRACTICE_DIFFICULTIES,
         start: (diffId) => this._startPractice(diffId),
       };
@@ -1137,7 +1171,7 @@ class App {
     const got = lessonContent(id);
     if (!got) return;
     this._startRound(got.content, 'learn', { lesson: got.lesson });
-    this.ui.announce(got.lesson.intro, true);
+    this.ui.announce(tr(got.lesson.intro), true);
   }
   _startPractice(diffId) {
     const seed = 'p-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e6).toString(36);
@@ -1177,7 +1211,7 @@ class App {
     const session = Session.restore(snap);
     if (!session) {
       clearSnapshot();
-      this.ui.toast('Saved round was corrupted and has been cleared.', 'warn');
+      this.ui.toast(() => tr('Saved round was corrupted and has been cleared.'), 'warn');
       return this._transition('title');
     }
     this._teardownRound();
@@ -1245,5 +1279,5 @@ const app = new App();
 window.__cm = app; // support/debug handle (read-only introspection in tests)
 app.boot().catch((err) => {
   console.error(err);
-  document.body.innerHTML = '<main style="padding:2rem;font-family:system-ui"><h1>Card Mosaic</h1><p>Something went wrong while starting. Please reload.</p></main>';
+  document.body.innerHTML = '<main style="padding:2rem;font-family:system-ui"><h1>Card Mosaic</h1><p>' + tr('Something went wrong while starting. Please reload.') + '</p></main>';
 });

@@ -143,6 +143,69 @@ export function journeyStars(result, par) {
   return stars;
 }
 
+/**
+ * Cloud-save conflict merge: the better of two progress records, so neither
+ * device's progress is lost. Journey stages stay completed on either side
+ * with the most stars, the higher best score, the fewer best moves and the
+ * earliest completion; lessons, dailies and challenges keep completion and
+ * the higher score; counters take the larger value.
+ */
+export function mergeProgress(local, remote) {
+  const a = structuredClone(local || DEFAULT_PROGRESS);
+  const b = remote || {};
+  const minDate = (x, y) => (!x ? y || null : !y ? x : (x < y ? x : y));
+  for (const [id, r] of Object.entries(b.journey || {})) {
+    const l = a.journey[id];
+    if (!l) { a.journey[id] = r; continue; }
+    a.journey[id] = {
+      completed: !!(l.completed || r.completed),
+      bestScore: Math.max(l.bestScore || 0, r.bestScore || 0),
+      bestMoves: Math.min(l.bestMoves ?? 1e9, r.bestMoves ?? 1e9),
+      stars: Math.max(l.stars || 0, r.stars || 0),
+      completedAt: minDate(l.completedAt, r.completedAt),
+    };
+  }
+  for (const [id, r] of Object.entries(b.lessons || {})) a.lessons[id] = { completed: !!((a.lessons[id] || {}).completed || r.completed) };
+  for (const [key, r] of Object.entries(b.dailies || {})) {
+    const l = a.dailies[key];
+    a.dailies[key] = !l ? r : {
+      score: Math.max(l.score || 0, r.score || 0),
+      completed: !!(l.completed || r.completed),
+      result: (r.score || 0) > (l.score || 0) ? r.result : l.result,
+    };
+  }
+  for (const [id, r] of Object.entries(b.challenges || {})) {
+    const l = a.challenges[id];
+    a.challenges[id] = !l ? r : { bestScore: Math.max(l.bestScore || 0, r.bestScore || 0), completed: !!(l.completed || r.completed) };
+  }
+  a.masteryXp = Math.max(a.masteryXp || 0, b.masteryXp || 0);
+  a.sessionsPlayed = Math.max(a.sessionsPlayed || 0, b.sessionsPlayed || 0);
+  if (b.streak && (b.streak.count || 0) > ((a.streak && a.streak.count) || 0)) a.streak = { ...b.streak };
+  return a;
+}
+
+/** Union of unlocked achievements, keeping the earliest unlock time. */
+export function mergeAchievements(local, remote) {
+  const out = { version: 1, unlocked: { ...((local && local.unlocked) || {}) } };
+  for (const [k, at] of Object.entries((remote && remote.unlocked) || {})) {
+    out.unlocked[k] = out.unlocked[k] && out.unlocked[k] < at ? out.unlocked[k] : at;
+  }
+  return out;
+}
+
+/** Union of the local boards (deduplicated by session id, best first per board). */
+export function mergeBoards(local, remote) {
+  const out = { version: 1, entries: {} };
+  for (const src of [local, remote]) {
+    for (const [key, list] of Object.entries((src && src.entries) || {})) {
+      const into = out.entries[key] || (out.entries[key] = []);
+      for (const e of list || []) if (!into.some((x) => x.sessionId && x.sessionId === e.sessionId)) into.push(e);
+    }
+  }
+  for (const key of Object.keys(out.entries)) out.entries[key] = out.entries[key].sort((x, y) => (y.score || 0) - (x.score || 0)).slice(0, 100);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Achievements (stable lowercase keys, idempotent unlocks)
 // ---------------------------------------------------------------------------

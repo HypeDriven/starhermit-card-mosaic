@@ -52,7 +52,7 @@ function hostedEnv() {
     const path = String(url);
     if (path === `/api/v1/users/${UID}/profile`) return resp(200, { nickname: 'Ada' });
     if (path === `/api/v1/me/cloud-saves/${encodeURIComponent('game:' + SLUG)}`) {
-      if (method === 'PUT') { saved = Buffer.from(JSON.parse(init.body).dataBase64, 'base64'); return resp(204, null); }
+      if (method === 'PUT') { saved = Buffer.from(JSON.parse(init.body).dataBase64, 'base64'); return resp(200, { etag: '"v' + calls.length + '"' }); }
       return saved ? resp(200, null, new Uint8Array(saved)) : resp(404, null);
     }
     if (path === `/api/v1/games/${SLUG}/settings`) {
@@ -136,4 +136,62 @@ test('standalone: no token, no network, local defaults', async () => {
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+test('save conflict: a write that loses to another device reloads the cloud copy for merging', async () => {
+  const cloud = { bytes: null, etag: null };
+  const fetchStub = async (url, init = {}) => {
+    const method = init.method || 'GET';
+    const path = String(url);
+    const slot = `/api/v1/me/cloud-saves/${encodeURIComponent('game:' + SLUG)}`;
+    if (path === slot + '/info') return resp(200, cloud.bytes ? { exists: true, etag: cloud.etag } : { exists: false });
+    if (path === slot) {
+      if (method === 'PUT') {
+        const h = init.headers || {};
+        if ((h['If-Match'] && h['If-Match'] !== cloud.etag) || (h['If-None-Match'] === '*' && cloud.bytes)) return resp(412, { etag: cloud.etag });
+        cloud.bytes = Buffer.from(JSON.parse(init.body).dataBase64, 'base64');
+        cloud.etag = '"v' + Date.now() + '"';
+        return resp(200, { etag: cloud.etag });
+      }
+      return cloud.bytes ? resp(200, null, new Uint8Array(cloud.bytes)) : resp(404, null);
+    }
+    return resp(404, null);
+  };
+  const win = fakeWindow('#game_token=' + jwt({ sub: UID, game_scope: SLUG, exp: Math.floor(Date.now() / 1000) + 3600 }));
+  installGlobals(win);
+  const sdk = loadSdkFactory().create({ window: win, fetch: fetchStub, setTimeout: () => 0, clearTimeout: () => {} });
+  globalThis.StarHermit = sdk.init();
+  const p = new Platform();
+  await p.init();
+  assert((await p.loadCloud()) === null, 'empty slot');
+  // Another device saves first.
+  const other = { v: 1, progress: { masteryXp: 9 } };
+  cloud.bytes = Buffer.from(sdk._zip('save.json', new TextEncoder().encode(JSON.stringify(other))));
+  cloud.etag = '"other"';
+  const merged = new Promise((resolve) => p.onConflict(resolve));
+  const pending = p.saveCloud({ v: 1, progress: { masteryXp: 2 } });
+  await p._flushSave();
+  const r = await pending;
+  assert(r.ok === false && r.error === 'conflict', 'conflict reported: ' + JSON.stringify(r));
+  const remote = await merged;
+  assert(remote && remote.progress.masteryXp === 9, 'the other device\'s save is handed over for merging');
+  assert(!sdk.saveConflicted(), 'writes are allowed again after the reload');
+  const again = p.saveCloud({ v: 1, progress: { masteryXp: 9 } });
+  await p._flushSave();
+  assert((await again).ok, 'merged save lands');
+});
+
+test('merge helpers keep the better of both devices', async () => {
+  const { mergeProgress, mergeAchievements, mergeBoards } = await import('../js/storage.js');
+  const m = mergeProgress(
+    { journey: { a: { completed: true, bestScore: 50, bestMoves: 9, stars: 1, completedAt: '2026-02-01' } }, lessons: {}, dailies: { d: { score: 10, completed: true } }, challenges: {}, masteryXp: 3, sessionsPlayed: 4, streak: { count: 1 } },
+    { journey: { a: { completed: false, bestScore: 80, bestMoves: 7, stars: 2, completedAt: null }, b: { completed: true, stars: 3 } }, lessons: { l: { completed: true } }, dailies: { d: { score: 30, completed: false } }, challenges: {}, masteryXp: 1, sessionsPlayed: 9, streak: { count: 4 } });
+  assert(m.journey.a.completed && m.journey.a.bestScore === 80 && m.journey.a.bestMoves === 7 && m.journey.a.stars === 2 && m.journey.a.completedAt === '2026-02-01', 'journey record merged');
+  assert(m.journey.b.completed && m.lessons.l.completed, 'remote-only records kept');
+  assert(m.dailies.d.score === 30 && m.dailies.d.completed, 'daily merged');
+  assert(m.masteryXp === 3 && m.sessionsPlayed === 9 && m.streak.count === 4, 'counters take the larger value');
+  const a = mergeAchievements({ unlocked: { x: '2026-03-01' } }, { unlocked: { x: '2026-01-01', y: '2026-02-01' } });
+  assert(a.unlocked.x === '2026-01-01' && a.unlocked.y, 'achievements union, earliest unlock');
+  const b = mergeBoards({ entries: { k: [{ score: 5, sessionId: 's1' }] } }, { entries: { k: [{ score: 9, sessionId: 's2' }, { score: 5, sessionId: 's1' }] } });
+  assert(b.entries.k.length === 2 && b.entries.k[0].score === 9, 'boards union without duplicates');
 });
