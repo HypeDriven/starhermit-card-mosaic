@@ -224,6 +224,7 @@ async function graphicsSettings(page, tag) {
   await page.waitForFunction(() => !/bloom/.test(document.getElementById('gfx-summary').textContent));
   const summary = await page.textContent('#gfx-summary');
   if (!/2048² shadows/.test(summary)) throw new Error(`summary does not reflect High: "${summary}"`);
+  if (!/ · Level 0 · /.test(summary)) throw new Error(`summary lacks the hardware level: "${summary}"`);
   await page.screenshot({ path: `/tmp/card-mosaic-e2e-graphics-${tag}.png` });
   await close();
 

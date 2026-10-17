@@ -21,6 +21,7 @@ const EN_US = {
   adaptive: 'Adaptive resolution',
   showFps: 'Show frame rate',
   unknownGpu: 'unknown GPU',
+  level: 'Level {n}',
   postFailed: 'Post-processing is unavailable on this device, so the table is drawn without it.',
   noRenderer: 'The 3D table is unavailable, so these options take effect only when it is.',
   sum: {
@@ -53,6 +54,7 @@ const ES_419 = {
   adaptive: 'Resolución adaptable',
   showFps: 'Mostrar cuadros por segundo',
   unknownGpu: 'GPU desconocida',
+  level: 'Nivel {n}',
   postFailed: 'El posprocesamiento no está disponible en este dispositivo, así que la mesa se dibuja sin él.',
   noRenderer: 'La mesa en 3D no está disponible, así que estas opciones solo se aplican cuando lo esté.',
   sum: {
@@ -84,6 +86,7 @@ const DE_DE = {
   adaptive: 'Adaptive Auflösung',
   showFps: 'Bildrate anzeigen',
   unknownGpu: 'unbekannte GPU',
+  level: 'Stufe {n}',
   postFailed: 'Nachbearbeitung ist auf diesem Gerät nicht verfügbar, daher wird der Tisch ohne sie dargestellt.',
   noRenderer: 'Der 3D-Tisch ist nicht verfügbar; diese Optionen wirken erst, wenn er es ist.',
   sum: {
@@ -110,6 +113,7 @@ const FR_FR = {
   adaptive: 'Résolution adaptative',
   showFps: 'Afficher les images par seconde',
   unknownGpu: 'GPU inconnu',
+  level: 'Niveau {n}',
   postFailed: 'Le post-traitement est indisponible sur cet appareil ; la table est dessinée sans lui.',
   noRenderer: 'La table en 3D est indisponible ; ces options ne s’appliqueront que lorsqu’elle le sera.',
   sum: {
@@ -142,6 +146,7 @@ const PT_BR = {
   adaptive: 'Resolução adaptativa',
   showFps: 'Mostrar taxa de quadros',
   unknownGpu: 'GPU desconhecida',
+  level: 'Nível {n}',
   postFailed: 'O pós-processamento não está disponível neste dispositivo, então a mesa é desenhada sem ele.',
   noRenderer: 'A mesa em 3D não está disponível; estas opções só terão efeito quando estiver.',
   sum: {
@@ -168,6 +173,7 @@ const IT_IT = {
   adaptive: 'Risoluzione adattiva',
   showFps: 'Mostra frequenza fotogrammi',
   unknownGpu: 'GPU sconosciuta',
+  level: 'Livello {n}',
   postFailed: 'La post-elaborazione non è disponibile su questo dispositivo, quindi il tavolo viene disegnato senza.',
   noRenderer: 'Il tavolo 3D non è disponibile; queste opzioni avranno effetto solo quando lo sarà.',
   sum: {

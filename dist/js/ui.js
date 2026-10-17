@@ -1360,7 +1360,7 @@ export class UI {
       r.grade === 'on' ? T.sum.grade : null,
       r.antialias === 'off' ? T.sum.noAa : T.tiers[r.antialias],
     ].filter(Boolean);
-    const summary = [info ? (info.gpu || T.unknownGpu) : null, parts.join(', '),
+    const summary = [info ? (info.gpu || T.unknownGpu) : null, info && info.level != null ? fmt(T.level, { n: info.level }) : null, parts.join(', '),
       info && info.pixels[0] > 1 ? `${info.pixels[0]}×${info.pixels[1]} px` : null].filter(Boolean).join(' · ');
     setText('gfx-summary', summary);
     const note = $('gfx-note');

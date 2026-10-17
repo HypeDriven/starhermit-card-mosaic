@@ -13,7 +13,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { detectPreset, resolve, describe, migrateQuality, SHADOW_MAP, PARTICLE_CAP } from './gfx.js';
+import { detectLevel, presetForLevel, resolve, describe, migrateQuality, SHADOW_MAP, PARTICLE_CAP } from './gfx.js';
 import { getTheme, motifColors } from './themes.js';
 import { paintCardFace } from './motifs.js';
 import { analyzeBoard } from './rules.js';
@@ -174,9 +174,11 @@ export class Renderer {
     // context creation) can follow the resolved preset.
     this._gpu = Renderer._probeGpu();
     this._mobile = Renderer._isMobile();
-    this._detected = detectPreset(this._gpu, { mobile: this._mobile });
+    // StarHermit hardware level → Auto preset (SwiftShader = level 0 → Low; phones cap at Balanced).
+    this._level = detectLevel(this._gpu, globalThis.StarHermitGpu ? globalThis.StarHermitGpu.detectSystem() : { mobile: this._mobile });
+    this._detected = presetForLevel(this._level);
     this._gfxSaved = settings.gfx || migrateQuality(settings.quality);
-    this._q = resolve(this._gfxSaved, this._detected);
+    this._q = resolve(this._gfxSaved, this._detected, this._level);
     this._canvasAA = this._q.antialias === 'msaa';
 
     let renderer;
@@ -293,7 +295,7 @@ export class Renderer {
     this._dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -GHOST_H);
 
     // particles (persistent pool)
-    this._pCap = PARTICLE_CAP[this._q.particles];
+    this._pCap = Math.min(PARTICLE_CAP[this._q.particles], this._q.budget.particles);
     this._buildParticles();
     this._buildDust();
 
@@ -476,6 +478,7 @@ export class Renderer {
       depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, fog: false,
     });
     this._dust = new THREE.Points(g, m);
+    g.setDrawRange(0, this._q.budget.dust);
     this._dust.frustumCulled = false;
     this._dust.layers.set(LAYER_FX);
     this._dust.visible = false;
@@ -534,15 +537,15 @@ export class Renderer {
     // detail textures (procedural, deterministic); applied only at detail 'detailed'
     this._woodTex = track(this._makeWoodTexture());
     this._feltTex = track(this._makeFeltTexture());
-    const mTable = track(new THREE.MeshPhysicalMaterial({
+    const mTable = track(this._lit({
       color: this._theme.table, roughness: 0.62, clearcoat: 0.35, clearcoatRoughness: 0.4,
     }));
-    const mTableSide = track(new THREE.MeshPhysicalMaterial({
+    const mTableSide = track(this._lit({
       color: this._theme.tableEdge, roughness: 0.7, clearcoat: 0.25, clearcoatRoughness: 0.5,
     }));
     const tableGeo = track(new THREE.ExtrudeGeometry(roundedRectShape(tableW, tableD, TABLE_R), {
       depth: TABLE_H - TABLE_BEVEL * 2, bevelEnabled: true,
-      bevelThickness: TABLE_BEVEL, bevelSize: TABLE_BEVEL * 0.8, bevelSegments: 2, curveSegments: 8,
+      bevelThickness: TABLE_BEVEL, bevelSize: TABLE_BEVEL * 0.8, bevelSegments: 2, curveSegments: this._q.budget.tableCurve,
     }));
     const table = new THREE.Mesh(tableGeo, [mTable, mTableSide]);
     table.rotation.x = -Math.PI / 2;
@@ -552,13 +555,13 @@ export class Renderer {
     world.add(table);
 
     // -- felt inlay ----------------------------------------------------------
-    const mFeltLine = track(new THREE.MeshStandardMaterial({ color: this._theme.feltLine, roughness: 0.95 }));
+    const mFeltLine = track(this._lit({ color: this._theme.feltLine, roughness: 0.95 }));
     const feltLine = new THREE.Mesh(track(new THREE.PlaneGeometry(boardW + FELT_PAD * 2 + 0.12, boardD + FELT_PAD * 2 + 0.12)), mFeltLine);
     feltLine.rotation.x = -Math.PI / 2;
     feltLine.position.y = FELT_Y - 0.006;
     feltLine.layers.set(LAYER_ENV);
     world.add(feltLine);
-    const mFelt = track(new THREE.MeshStandardMaterial({ color: this._theme.felt, roughness: 0.95 }));
+    const mFelt = track(this._lit({ color: this._theme.felt, roughness: 0.95 }));
     const felt = new THREE.Mesh(track(new THREE.PlaneGeometry(boardW + FELT_PAD * 2, boardD + FELT_PAD * 2)), mFelt);
     felt.rotation.x = -Math.PI / 2;
     felt.position.y = FELT_Y;
@@ -568,7 +571,7 @@ export class Renderer {
 
     // -- cell texture (shared by cells + tray slots) --------------------------
     this._cellTex = track(this._makeCellTexture());
-    const mCell = track(new THREE.MeshStandardMaterial({ map: this._cellTex, roughness: 0.95 }));
+    const mCell = track(this._lit({ map: this._cellTex, roughness: 0.95 }));
 
     // -- board cells ----------------------------------------------------------
     const cellGeo = track(new THREE.PlaneGeometry(CELL_VISUAL, CELL_VISUAL));
@@ -606,7 +609,7 @@ export class Renderer {
     }
 
     // -- tray ----------------------------------------------------------------
-    const mTray = track(new THREE.MeshStandardMaterial({ color: this._theme.cellInlay, roughness: 0.9 }));
+    const mTray = track(this._lit({ color: this._theme.cellInlay, roughness: 0.9 }));
     const trayMat = new THREE.Mesh(track(new THREE.PlaneGeometry(trayN * PITCH + 0.5, 1.45)), mTray);
     trayMat.rotation.x = -Math.PI / 2;
     trayMat.position.set(0, FELT_Y - 0.003, trayZ);
@@ -663,23 +666,23 @@ export class Renderer {
     // -- cards ----------------------------------------------------------------
     const cardGeo = track(new THREE.ExtrudeGeometry(roundedRectShape(CARD_SIZE, CARD_SIZE, CARD_RADIUS), {
       depth: CARD_H - CARD_BEVEL * 2, bevelEnabled: true,
-      bevelThickness: CARD_BEVEL, bevelSize: CARD_BEVEL * 0.7, bevelSegments: 2, curveSegments: 6,
+      bevelThickness: CARD_BEVEL, bevelSize: CARD_BEVEL * 0.7, bevelSegments: this._q.budget.cardBevel, curveSegments: this._q.budget.cardCurve,
     }));
     cardGeo.translate(0, 0, -(CARD_H - CARD_BEVEL * 2) / 2);
-    const mBody = track(new THREE.MeshStandardMaterial({ color: this._theme.cardEdge, roughness: 0.8 }));
-    const mBack = track(new THREE.MeshStandardMaterial({ color: this._theme.cardBack, roughness: 0.85 }));
+    const mBody = track(this._lit({ color: this._theme.cardEdge, roughness: 0.8 }));
+    const mBack = track(this._lit({ color: this._theme.cardBack, roughness: 0.85 }));
     const mSeal = track(new THREE.MeshBasicMaterial({ color: this._theme.accent, transparent: true, opacity: 0.95, depthWrite: false }));
 
     this._cards = new Map();
     const colors = motifColors(this._cvd);
     for (const c of content.cards) {
       const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = TEX_SIZE;
+      canvas.width = canvas.height = this._q.budget.cardTexture || TEX_SIZE; // per-preset texture variant
       paintCardFace(canvas, c.edges, colors, { face: this._theme.cardFace, frame: this._theme.cardEdge });
       const texture = track(new THREE.CanvasTexture(canvas));
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = 4;
-      const faceMat = track(new THREE.MeshStandardMaterial({ map: texture, roughness: 0.85 }));
+      const faceMat = track(this._lit({ map: texture, roughness: 0.85 }));
 
       const group = new THREE.Group();
       const body = new THREE.Mesh(cardGeo, mBody);
@@ -821,6 +824,18 @@ export class Renderer {
     const out = new THREE.CanvasTexture(c);
     out.colorSpace = THREE.SRGBColorSpace;
     return out;
+  }
+
+  /** Lit material for the preset budget: Lambert on Low, Standard on Balanced, Physical (clearcoat) above. */
+  _lit(params) {
+    const kind = this._q.budget.material;
+    const { clearcoat, clearcoatRoughness, ...std } = params;
+    if (kind === 'lambert') {
+      const { roughness, metalness, ...lp } = std;
+      return new THREE.MeshLambertMaterial(lp);
+    }
+    if (kind === 'physical' && clearcoat) return new THREE.MeshPhysicalMaterial(params);
+    return new THREE.MeshStandardMaterial(std);
   }
 
   _applyDetail() {
@@ -1525,7 +1540,7 @@ export class Renderer {
     if (this._disposed) return;
     this._gfxSaved = saved && typeof saved === 'object' ? { ...saved } : { preset: 'auto' };
     const prev = this._q;
-    const q = this._q = resolve(this._gfxSaved, this._detected);
+    const q = this._q = resolve(this._gfxSaved, this._detected, this._level);
     const size = SHADOW_MAP[q.shadows];
     const shadowsChanged = (size > 0) !== this._renderer.shadowMap.enabled;
     this._renderer.shadowMap.enabled = size > 0;
@@ -1537,7 +1552,15 @@ export class Renderer {
         this._keyLight.shadow.map = null;
       }
     }
-    this._pCap = PARTICLE_CAP[q.particles];
+    this._pCap = Math.min(PARTICLE_CAP[q.particles], q.budget.particles);
+    // Preset asset variants (materials, card textures, bevel/curve segments): rebuild the board in place.
+    const assets = (b) => [b.material, b.cardTexture, b.cardCurve, b.cardBevel, b.tableCurve].join('|');
+    if (prev && this._built && this._content && assets(prev.budget) !== assets(q.budget)) {
+      const st = this._state, meta = this._meta;
+      this.load(this._content, this._themeId);
+      if (st) this.syncState(st, meta);
+    }
+    if (this._dust) this._dust.geometry.setDrawRange(0, q.budget.dust);
     this._applyDetail();
     if (q.ambient !== 'on' && this._lightPatch) this._lightPatch.material.opacity = 0.09;
     this._adaptiveScale = 1;
@@ -1562,6 +1585,7 @@ export class Renderer {
     const px = [Math.round(this._size[0] * this._pixelRatio), Math.round(this._size[1] * this._pixelRatio)];
     return {
       gpu: this._gpu || '',
+      level: this._level,
       detected: this._detected,
       mobile: this._mobile,
       resolved: { ...this._q },
