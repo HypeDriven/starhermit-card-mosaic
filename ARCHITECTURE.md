@@ -1,6 +1,18 @@
 # Card Mosaic — Architecture Contract
 
-Browser game, ES modules, no build step. Entry `index.html` loads `js/main.js` (`<script type="module">`). Three.js r160 is vendored at `vendor/three.module.js` and imported via import map (`"three": "./vendor/three.module.js"`). All modules are plain ES modules; `js/rules.js`, `js/rng.js`, `js/content.js`, `js/session.js` must stay environment-agnostic (importable in node — the test suite and `server.js` import them).
+A StarHermit engine script game (engine 1.15.0, host API 1.17). The entry is `native/main.ts` (starhermit.txt `engine.entry`); the native modules import the pure game modules in `js/` as ES modules (`allowJs`), and `js/strings.js` / `js/i18n.js` load as classic scripts (`loadClassic`). `js/rules.js`, `js/rng.js`, `js/content.js`, `js/session.js`, `js/storage.js`, `js/migrate.js` and `js/themes.js` stay environment-agnostic: the node tests and `server.js` import them. The browser build's DOM shell (index.html, css/, js/main.js, ui.js, render.js, audio.js, platform.js, gfx*.js, vendor/three, the SDK and page helpers) was replaced by `native/*.ts`; `index.html` is now the engine's web loader written by `npm run package`.
+
+## Engine client (native/)
+
+- `main.ts` — phases (title → active ⇄ paused → resolving → results), fixed-step play clock (60 Hz, active only), selection and `Session.dispatch`, lessons, outcomes, achievements, local boards, snapshot, leaderboard posting, input (`onAction`), lifecycle.
+- `screens.ts` — top bar, play layout per window size, screens and dialogs, toasts, captions.
+- `board.ts` — the felt panel: cells and tray slots as `ui.widget` buttons drawn with `starhermit:draw`; `motifs.ts` the glyphs.
+- `render.ts` — the 3D studio table (`starhermit:scene`), framed with `setViewOffset` into the play area; `quality.ts` the look per graphics tier.
+- `audio.ts` — clips and rendered music/ambience on the runtime's buses.
+- `platform.ts` — save document (`saves`), foreign-save and legacy-settings migration, game settings, player, invite, leaderboards, platform clock.
+- `style.ts` — `assets/ui-style.json` (from `tools/ui-style.css`) and per-theme tokens; `i18n.ts` — locale from the runtime; `shim.ts` — `localStorage` over device storage for `js/storage.js`.
+
+The sections below are the browser build's contract for the shared pure modules; they still hold for `js/rng.js`, `js/rules.js`, `js/content.js`, `js/session.js`, `js/themes.js` and `js/motifs.js`. The browser-only modules they describe (render.js, audio.js, platform.js, ui.js, main.js, the storage of settings) are historical.
 
 ## Existing modules (do not modify; code against these APIs)
 

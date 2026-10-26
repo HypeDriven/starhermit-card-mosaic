@@ -1,32 +1,30 @@
 # Card Mosaic
 
-An original adjacency puzzle: place edge-coded cards into a rectangular mosaic so neighboring motifs connect. Three.js studio card-table presentation with a fully playable semantic HTML board layer.
+An original adjacency puzzle: place edge-coded cards into a rectangular mosaic so neighboring motifs connect. A StarHermit engine script game (engine 1.15.0): the felt board, HUD and menus on `starhermit:ui`, the studio card table on `starhermit:scene`, played natively by the StarHermit client and in browsers by the engine's web runtime.
 
 ## Run
 
 ```bash
-node server.js 8080        # static host + authoritative API (time, scores, boards, cloud saves)
-# or any static server, e.g.: python3 -m http.server 8080
+starhermit .            # natively (the StarHermit runtime, ~/sh/runtime/1.15.0/…)
+npm run package         # writes the web loader index.html + starhermit-files.json (after every change)
+npm run serve           # optional: node server.js, a local static host for the packaged folder
 ```
-
-Open http://localhost:8080/. Offline play works after first load (service worker). If WebGL is unavailable the DOM board remains fully playable.
 
 ## Test
 
 ```bash
-node tests/run.mjs         # 67 checks: rules, content validation, replay determinism, fuzz, golden
+npm test                # unit tests (rules, content, replay, fuzz, golden, migration, i18n) + engine checks
+npm run test:browser    # headless Chrome plays the packaged loader (desktop, phone, landscape)
+npm run gen-play        # regenerate tests/native/*.play from the content's solutions
+npm run css             # tools/ui-style.css → assets/ui-style.json
 ```
 
 ## Layout
 
-- `js/rules.js` — pure deterministic rules engine (commands, legality, scoring, terminal states, hashing)
-- `js/content.js` — versioned content: 50-stage journey, daily seed, practice difficulties, challenges, lessons, validators
-- `js/session.js` — command log, undo, hints, replay envelopes, snapshots
-- `js/render.js` — Three.js scene (themes, quality tiers, VFX, pointer input)
-- `js/ui.js` + `index.html` + `css/style.css` — DOM shell, screens, accessibility mirror board
-- `js/audio.js` — synthesized WebAudio (4 buses, adaptive music, ambience)
-- `js/platform.js` — StarHermit host adapter (offline-graceful); `server.js` — authoritative script
-- `js/storage.js` — versioned, checksummed local persistence
-- `tools/build-dist.sh` — assemble `dist/` for upload (starhermit.txt at its root)
+- `native/*.ts` — the engine client (entry `native/main.ts`): state machine, board, screens, 3D table, audio, platform, styles
+- `js/rules.js`, `js/content.js`, `js/session.js`, `js/rng.js`, `js/themes.js` — pure rules, content and session (shared with the tests and `server.js`)
+- `js/storage.js`, `js/migrate.js` — merges, achievements, the save document and the browser build's save/settings migration
+- `js/strings.js`, `js/i18n.js`, `js/platform-strings.js` — nine locales
+- `score-script.js` — the platform script posting totals to the `high-score` board
 
-See ARCHITECTURE.md for the module contract.
+See spec.md for the full design and ARCHITECTURE.md for the module contract.
