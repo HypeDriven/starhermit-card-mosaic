@@ -1,11 +1,20 @@
 {
   "name": "card-mosaic",
+  "version": "1.0.0",
+  "description": "Card Mosaic \u2014 an edge-matching card puzzle on a studio card table, on the StarHermit engine.",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/run.mjs",
-    "test:e2e": "node tests/e2e.mjs"
+    "test": "npm run test:unit && npm run test:native",
+    "test:unit": "node tests/run.mjs",
+    "test:native": "node tests/native.mjs",
+    "test:browser": "node tools/browser-play.mjs .",
+    "package": "node tools/package-web.mjs",
+    "css": "node tools/css.mjs",
+    "gen-play": "node tools/gen-play.mjs",
+    "serve": "node server.js"
   },
+  "license": "UNLICENSED",
   "devDependencies": {
     "playwright-core": "^1.62.1"
   }

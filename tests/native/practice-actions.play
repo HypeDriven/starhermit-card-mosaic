@@ -1,0 +1,78 @@
+# Play → Practice → Casual: Hint, an invalid try (a tray card onto a
+# placed card), a placement and Undo, the Pause menu with its settings
+# tabs, Leave (confirmed), Resume saved round from the title, Concede.
+until 300 Play
+frames 10
+click Play
+until 60 Choose a mode
+frames 10
+click Practice
+until 60 Casual
+frames 10
+save setup
+click Casual
+until 120 Rotate
+frames 30
+key KeyH 2
+frames 20
+save hint
+click Tray slot 1,
+frames 5
+click card with
+until 30 That cell already holds a card.
+frames 5
+save invalid
+key Escape 2
+frames 10
+click Tray slot 1,
+frames 5
+click empty, legal placement
+frames 20
+save placed
+key KeyU 2
+until 30 Undone
+frames 10
+key KeyP 2
+until 60 Paused
+frames 10
+save pause
+click Graphics
+until 60 Table theme
+frames 10
+save settings-graphics
+click Controls
+until 60 Keyboard bindings
+frames 10
+save settings-controls
+click Accessibility
+until 60 Left-handed layout
+frames 10
+click Left-handed layout
+frames 10
+save settings-access
+click Left-handed layout
+frames 10
+click Close settings
+until 60 Resume
+frames 10
+click Leave round
+until 60 Leave round?
+frames 10
+save confirm
+click Leave
+until 120 Resume saved round
+frames 10
+save title-resume
+click Resume saved round
+until 120 Rotate
+frames 20
+key KeyP 2
+until 60 Paused
+frames 10
+click Concede round
+until 60 Concede round?
+frames 10
+click Concede
+until 120 Round conceded
+frames 20
+save conceded

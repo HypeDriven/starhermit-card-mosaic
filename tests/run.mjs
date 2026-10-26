@@ -1,4 +1,5 @@
-// run.mjs — homegrown test runner. Usage: node tests/run.mjs
+// run.mjs — homegrown test runner for the rules, content, replay, fuzz,
+// golden, save-migration and localization tests. Usage: node tests/run.mjs
 // Imports every test file (registering its tests), then executes all
 // registered tests sequentially. Exits non-zero on any failure.
 
@@ -10,8 +11,7 @@ const FILES = [
   'replay.test.mjs',
   'fuzz.test.mjs',
   'golden.test.mjs',
-  'gfx.test.mjs',
-  'platform.test.mjs',
+  'migrate.test.mjs',
   'i18n.test.mjs',
 ];
 

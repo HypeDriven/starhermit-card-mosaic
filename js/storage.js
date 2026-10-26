@@ -2,7 +2,8 @@
 // Key prefix cardmosaic.v1. Every record is an envelope {v, data, crc};
 // corrupt or version-mismatched entries read as null (never throw).
 
-import { migrateQuality } from './gfx.js';
+// JSON round-trip clone (structuredClone is browser-only on the engine).
+const clone = (v) => JSON.parse(JSON.stringify(v));
 
 const PREFIX = 'cardmosaic.v1.';
 const RECORD_VERSION = 1;
@@ -93,18 +94,19 @@ export const DEFAULT_SETTINGS = Object.freeze({
 export function loadSettings() {
   const s = readRecord('settings');
   if (!s) {
-    const fresh = structuredClone(DEFAULT_SETTINGS);
+    const fresh = clone(DEFAULT_SETTINGS);
     fresh.graphics.gfx = { preset: 'auto' };
     return fresh;
   }
   // shallow-merge over defaults so new keys appear on old saves
-  const merged = structuredClone(DEFAULT_SETTINGS);
+  const merged = clone(DEFAULT_SETTINGS);
   for (const k of Object.keys(merged)) {
     if (s[k] && typeof s[k] === 'object' && !Array.isArray(s[k])) Object.assign(merged[k], s[k]);
     else if (s[k] !== undefined) merged[k] = s[k];
   }
   if (!merged.graphics.gfx || typeof merged.graphics.gfx !== 'object') {
-    merged.graphics.gfx = migrateQuality(s.graphics && s.graphics.quality);
+    const q = s.graphics && s.graphics.quality;
+    merged.graphics.gfx = { preset: q === 'low' ? 'low' : q === 'medium' ? 'balanced' : 'auto' };
   }
   return merged;
 }
@@ -127,8 +129,8 @@ export const DEFAULT_PROGRESS = Object.freeze({
 
 export function loadProgress() {
   const p = readRecord('progress');
-  if (!p) return structuredClone(DEFAULT_PROGRESS);
-  const merged = structuredClone(DEFAULT_PROGRESS);
+  if (!p) return clone(DEFAULT_PROGRESS);
+  const merged = clone(DEFAULT_PROGRESS);
   Object.assign(merged, p);
   return merged;
 }
@@ -151,7 +153,7 @@ export function journeyStars(result, par) {
  * the higher score; counters take the larger value.
  */
 export function mergeProgress(local, remote) {
-  const a = structuredClone(local || DEFAULT_PROGRESS);
+  const a = clone(local || DEFAULT_PROGRESS);
   const b = remote || {};
   const minDate = (x, y) => (!x ? y || null : !y ? x : (x < y ? x : y));
   for (const [id, r] of Object.entries(b.journey || {})) {

@@ -1,0 +1,172 @@
+/* Card Mosaic — the browser build's css/style.css rewritten class-based for
+   the engine's UI (`npm run css` converts it into assets/ui-style.json).
+   Element selectors, ids, attribute selectors, @media and color-mix() do
+   not convert: every widget names its classes, the breakpoints are layouts
+   picked in native/screens.ts, and the theme's mixed colours are tokens that
+   native/style.ts computes per table theme (themes.js) and sets at run time.
+   The values below are the studio theme's, so the sheet reads on its own. */
+
+:root {
+  --bg: #e8ded0;
+  --surface: #f6efe3;
+  --ink: #2c2620;
+  --text: #2c2620;
+  --text-soft: #6b5f52;
+  --accent: #c96f2e;
+  --accent-dark: #8d4e20;
+  --select: #ffd166;
+  --invalid: #c0392b;
+  --match: #7fb069;
+  --card: #f6efe3;
+  --card-edge: #d8cdb8;
+  --felt: #4c6b58;
+  --felt-dark: #46624f;
+  --felt-border: #624a32;
+  --felt-rim: #82998b;
+  --topbar: #6b5137;
+  --btn-border: #2c262059;
+  --soft-panel: #f6efe3db;
+  --line: #2c262040;
+  --you: #ffd16666;
+  --topbar-ink: #f4ead8;
+}
+
+* { box-sizing: border-box; }
+
+/* ---------------------------------------------------------------- chrome */
+.topbar { background: var(--topbar); color: var(--topbar-ink); padding: 4px 8px; min-height: 52px; border-radius: 0; }
+.status-line { color: var(--topbar-ink); font-size: 15.2px; text-align: center; }
+.icon-btn {
+  min-height: 44px; min-width: 44px; padding: 6px 10px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--topbar-ink); font-size: 15px;
+}
+.icon-btn:hover { background: #ffffff1f; }
+
+/* ---------------------------------------------------------------- buttons */
+.btn {
+  min-height: 44px; min-width: 44px; padding: 8px 16px;
+  border: 2px solid var(--btn-border); border-radius: 10px;
+  background: var(--surface); color: var(--ink); text-align: center;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.45; }
+.btn:focus-visible { outline: 3px solid var(--select); outline-offset: 2px; }
+.btn-primary { background: var(--accent); border-color: var(--accent-dark); color: #ffffff; font-weight: 600; }
+.btn-primary:hover { border-color: var(--accent-dark); }
+.btn-quiet { background: transparent; border-color: transparent; }
+.btn-quiet:hover { border-color: transparent; }
+/* the underline (styles have no text decoration): a hairline under the label */
+.btn-quiet::after { content: ""; position: absolute; left: 16px; right: 16px; bottom: 10px; height: 1px; background: var(--ink); }
+.btn-danger { background: var(--invalid); border-color: var(--invalid); color: #ffffff; }
+.btn-xl { font-size: 21.6px; padding: 14px 48px; }
+.btn-pressed { border-color: var(--accent); font-weight: 700; }
+.action-btn { padding: 8px 14px; }
+.mode-card { padding: 16px; text-align: start; }
+.stage-btn { min-width: 72px; padding: 8px 10px; }
+.lesson-btn { text-align: start; padding: 10px 16px; }
+.opt-btn { text-align: start; padding: 10px 16px; }
+.theme-swatch { padding: 6px 10px; }
+
+/* ---------------------------------------------------------------- text */
+.h1 { font-size: 41.6px; font-weight: 700; color: var(--text); }
+.h2 { font-size: 24px; font-weight: 700; color: var(--text); }
+.h3 { font-size: 18.7px; font-weight: 700; color: var(--text); }
+.body { color: var(--text); }
+.tagline { color: var(--text-soft); text-align: center; }
+.blurb { color: var(--text); }
+.soft { color: var(--text-soft); }
+.small-soft { color: var(--text-soft); font-size: 13.6px; }
+.ranked-note { font-size: 14.4px; color: var(--text-soft); }
+.mode-name { font-size: 19.2px; font-weight: 700; }
+.mode-blurb { color: var(--text-soft); }
+.mode-meta { font-size: 13.6px; color: var(--text-soft); }
+.badge-ranked {
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 2px 8px; border-radius: 999px; border: 1.5px solid var(--accent); color: var(--accent);
+}
+.badge-casual {
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 2px 8px; border-radius: 999px; border: 1.5px solid var(--text-soft); color: var(--text-soft);
+}
+.stage-name { font-weight: 600; }
+.stage-lock { font-size: 12.8px; }
+.lesson-name { font-weight: 700; }
+.lesson-intro { font-size: 14.4px; color: var(--text-soft); }
+.lesson-done { color: var(--match); font-weight: 700; }
+.opt-blurb { font-size: 13.6px; color: var(--text-soft); }
+.dt { font-weight: 700; color: var(--text); }
+.dd { color: var(--text); }
+.score-dt { color: var(--text-soft); }
+.score-dd { color: var(--ink); text-align: end; }
+.score-total { color: var(--ink); font-weight: 700; }
+.stars { font-size: 28.8px; color: var(--accent); }
+.newbest { font-weight: 700; color: var(--match); }
+.unlock { border-left: 4px solid var(--accent); border-radius: 0; padding: 0 0 0 10px; color: var(--text); }
+.daily-countdown { font-size: 12.8px; }
+.title-summary { color: var(--text-soft); text-align: center; }
+
+/* ---------------------------------------------------------------- panels */
+.rule-card {
+  color: var(--ink); background: var(--soft-panel); border: 1px solid var(--card-edge);
+  border-radius: 10px; padding: 12px 16px;
+}
+.ach-card {
+  color: var(--ink); background: var(--soft-panel); border: 1px solid var(--card-edge);
+  border-radius: 10px; padding: 10px 14px;
+}
+.ach-locked { opacity: 0.55; }
+.ach-name { font-weight: 700; }
+.ach-desc { font-size: 13.6px; color: var(--text-soft); }
+.ach-date { font-size: 12.8px; color: var(--text-soft); }
+.overlay-panel {
+  background: var(--bg); color: var(--text); border-radius: 15px; padding: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.pause-section { border-top: 1px solid var(--line); border-radius: 0; padding: 8px 0 0 0; }
+.section-h { font-size: 13.6px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-soft); font-weight: 700; }
+.tab-strip { border-bottom: 2px solid var(--line); border-radius: 0; }
+.tab {
+  min-height: 44px; padding: 8px 14px; border: 0; border-bottom: 3px solid transparent; border-radius: 0;
+  background: transparent; color: var(--text-soft);
+}
+.tab.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 700; }
+.bindings-key {
+  font-size: 12px; border: 1px solid var(--text); border-radius: 4px; padding: 0 4px; color: var(--text);
+}
+.lb-row { padding: 4px 8px; border-radius: 6px; color: var(--text); }
+.lb-you { padding: 4px 8px; border-radius: 6px; background: var(--you); font-weight: 700; color: var(--text); }
+.title-art {
+  border-radius: 15px; border: 3px solid var(--felt-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.results-art { border-radius: 15px; border: 2px solid var(--card-edge); }
+
+/* ---------------------------------------------------------------- play */
+.rail-left { color: var(--ink); background: var(--soft-panel); border-radius: 10px; padding: 12px; }
+.rail-h {
+  font-size: 12.8px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-soft); font-weight: 700; margin: 12px 0 2px 0;
+}
+.rail-p { color: var(--ink); }
+.hud-lesson { color: var(--accent-dark); font-weight: 600; }
+.lesson-banner { background: var(--soft-panel); color: var(--ink); border-radius: 10px; padding: 6px 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+.hud-stat { color: var(--ink); }
+.ranked-badge { color: var(--accent); font-weight: 700; }
+.felt-panel {
+  background: var(--felt-dark);
+  border: 3px solid var(--felt-border);
+  border-radius: 20px;
+  padding: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 0 0 2px var(--felt-rim);
+}
+.drawer { background: var(--bg); color: var(--text); border-radius: 16px; padding: 12px 16px; }
+
+/* ---------------------------------------------------------------- toasts, captions */
+.toast {
+  background: var(--text); color: var(--bg); border-radius: 999px; padding: 8px 18px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+.toast-warn { background: var(--invalid); color: #ffffff; }
+.toast-success { background: var(--match); color: #ffffff; }
+.captions { background: rgba(0, 0, 0, 0.75); color: #ffffff; padding: 4px 14px; border-radius: 6px; font-size: 14.4px; }

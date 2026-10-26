@@ -1,0 +1,51 @@
+# How to play, Profile (a guest names themself), Score chase, the Daily
+# setup and Settings from the title, the Challenges list.
+until 300 Play
+frames 10
+click How to play
+until 60 Impostors
+frames 10
+save help
+key Escape 2
+until 60 Play
+frames 10
+click Profile
+until 60 Statistics
+frames 10
+click profile-name
+frames 5
+type Ada
+frames 5
+click Save
+until 30 Display name saved
+frames 10
+save profile
+key Escape 2
+until 60 Play
+frames 10
+click Daily challenge
+until 60 Ranked — the result counts toward leaderboards.
+frames 10
+save daily-setup
+click Back
+until 60 Choose a mode
+frames 10
+click Score Chase
+until 60 Score chase
+frames 30
+save boards
+key Escape 2
+until 60 Play
+frames 10
+click Play
+until 60 Choose a mode
+frames 10
+click Challenge
+until 60 Frugal Hands
+frames 10
+save challenges
+click Studio Sprint
+until 120 Rotate
+frames 30
+expect Time:
+save sprint

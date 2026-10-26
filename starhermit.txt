@@ -1,17 +1,49 @@
 name=Card Mosaic
 description=Arrange patterned cards in a grid so every touching edge matches and the whole mosaic fits together.
-launch=index.html
 owner=2712e04e-461b-4d23-81ae-e40b429128a8
 server=score-script.js
 cover=cover.jpg
+
+# StarHermit engine script game: one package, played natively by the
+# StarHermit client and in browsers by the engine's web runtime. Browsers open
+# launch=index.html, the loader `npm run package` writes (it pins the engine
+# on wiki.starhermit.com by hash; never edit it). Re-run `npm run package`
+# after every change and commit index.html + starhermit-files.json.
+launch=index.html
+engine.api=1
+engine.entry=native/main.ts
+engine.version=1.15.0
+engine.minor=17
+engine.capabilities=platform,storage,clipboard
+
+# Keyboard controls (players rebind keys and pads in the runtime's Options).
+# The board is also played with the pointer or touch: tap a tray card, then a
+# cell; tap two placed cards to swap them.
 control.up=ArrowUp | Move focus up
 control.down=ArrowDown | Move focus down
 control.left=ArrowLeft | Move focus left
 control.right=ArrowRight | Move focus right
-control.select=Enter+Space | Select or confirm
+control.select=Enter+Space+NumpadEnter | Select or confirm
 control.cancel=Escape | Cancel, close dialog or pause
 control.undo=KeyU | Undo
 control.hint=KeyH | Hint
 control.rotate=KeyR | Rotate selected tray card
 control.lock=KeyL | Lock selected cell
+control.recall=Backspace+Delete | Recall selected card
 control.pause=KeyP | Pause
+engine.group.up=Board
+engine.group.undo=Round
+
+# Gamepad defaults: the D-pad moves the board cursor, A selects or places.
+engine.gamepad.up=DpadUp+LeftStickUp
+engine.gamepad.down=DpadDown+LeftStickDown
+engine.gamepad.left=DpadLeft+LeftStickLeft
+engine.gamepad.right=DpadRight+LeftStickRight
+engine.gamepad.select=South
+engine.gamepad.cancel=East
+engine.gamepad.undo=West
+engine.gamepad.hint=North
+engine.gamepad.rotate=RightShoulder
+engine.gamepad.lock=LeftShoulder
+engine.gamepad.recall=LeftTrigger
+engine.gamepad.pause=Start
