@@ -1,11 +1,11 @@
 # Card Mosaic
 
-An original adjacency puzzle: place edge-coded cards into a rectangular mosaic so neighboring motifs connect. A StarHermit engine script game (engine 1.16.2): the felt board, HUD and menus on `starhermit:ui`, the studio card table on `starhermit:scene`, played natively by the StarHermit client and in browsers by the engine's web runtime.
+An original adjacency puzzle: place edge-coded cards into a rectangular mosaic so neighboring motifs connect. A StarHermit engine script game (engine 1.16.3): the felt board, HUD and menus on `starhermit:ui`, the studio card table on `starhermit:scene`, played natively by the StarHermit client and in browsers by the engine's web runtime.
 
 ## Run
 
 ```bash
-starhermit .            # natively (the StarHermit runtime, ~/sh/runtime/1.16.2/…)
+starhermit .            # natively (the StarHermit runtime, ~/sh/runtime/1.16.3/…)
 npm run package         # writes the web loader index.html + starhermit-files.json (after every change)
 npm run serve           # optional: node server.js, a local static host for the packaged folder
 ```
