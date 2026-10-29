@@ -4,7 +4,7 @@
 // and the tray mat, the studio props (glazed mug, pencil, spare-card stack,
 // brass desk lamp with its warm bulb and point light, the window-light patch),
 // dust motes drifting in the window light, the backdrop's wall gradient,
-// fog, key / fill / hemisphere lights per theme, RoomEnvironment reflections
+// fog, key / fill / hemisphere lights per theme (the page's r160 values), per-material RoomEnvironment reflections
 // and the post effects per graphics level. The camera frames the table into
 // the play area the HUD rails leave (setViewOffset), at the authored 38°
 // field of view and 55° elevation; an invalid move gives it a small shake, a
@@ -20,7 +20,7 @@ import {
   ACESFilmicToneMapping, AdditiveBlending, BackSide, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, Color,
   ConeGeometry, CylinderGeometry, DirectionalLight, DoubleSide, ExtrudeGeometry, Fog, Group, HemisphereLight, Material,
   Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshPhysicalMaterial, MeshStandardMaterial, PMREMGenerator,
-  PerspectiveCamera, PlaneGeometry, PointLight, Points, PointsMaterial, RepeatWrapping, RoomEnvironment, SRGBColorSpace,
+  PerspectiveCamera, PlaneGeometry, PointLight, Points, PointsMaterial, RepeatWrapping, RoomEnvironment, SRGBColorSpace, OrthographicCamera,
   Shape, SphereGeometry, TorusGeometry, Vector3, renderer, scene, type Texture,
 } from "starhermit:scene";
 import { OffscreenCanvas } from "starhermit:canvas";
@@ -43,8 +43,8 @@ const CARD_SIZE = 0.98;
 const FOG_NEAR_K = 0.9;
 const FOG_FAR_K = 3.2;
 const DUST_COUNT = 90;
-/** The RoomEnvironment's strength against the browser build's 0.45 envMapIntensity (the engine's room is brighter). */
-const ENV_INTENSITY = 0.3;
+/** RoomEnvironment reflections on PBR materials (the page's per-material envMapIntensity, × each prop's boost). */
+const ENV_INTENSITY = 0.45;
 
 const camera = new PerspectiveCamera(FRAMING.fov, 16 / 9, 0.1, 100);
 renderer.camera = camera;
@@ -56,13 +56,11 @@ let look: Look | null = null;
 let reducedMotion = false;
 let time = 0;
 
-// --- lights (three.js intensities ÷ π: the engine's lights are physically based) ---
+// --- lights (the page's three r160 intensities and shadow values, engine.minor 28) ---
 const keyLight = new DirectionalLight(0xffffff, 1);
 keyLight.position.set(4.5, 7.5, 3.5);
 keyLight.shadow.bias = -0.0004;
-keyLight.shadow.normalBias = 1;
-keyLight.shadow.radius = 2;
-keyLight.shadow.distance = 30;
+keyLight.shadow.normalBias = 0.02;
 const fillLight = new DirectionalLight(0xffffff, 1);
 fillLight.position.set(-5, 4, -2.5);
 const hemi = new HemisphereLight(0xffffff, 0x000000, 1);
@@ -304,6 +302,7 @@ function build(): void {
   dust.position.set(-(L.tableW / 2 - TABLE_PAD * 0.55) * 0.55, 0, L.tableCz - L.tableD / 2 + TABLE_PAD * 0.5 + 1.1);
   applyThemeLights();
   computeFraming();
+  applyEnv();
 }
 
 function buildProps(group: Group): void {
@@ -323,6 +322,7 @@ function buildProps(group: Group): void {
   const mug = new Group();
   const mugMat = look!.budget.material === "lambert" ? new MeshLambertMaterial({ color: t.accentSoft })
     : new MeshPhysicalMaterial({ color: t.accentSoft, roughness: 0.45, clearcoat: 0.8, clearcoatRoughness: 0.15 });
+  mugMat.userData.envBoost = 1.4;
   const cup = new Mesh(new CylinderGeometry(0.26, 0.22, 0.5, 20), mugMat);
   cup.position.y = 0.25;
   cup.castShadow = true;
@@ -361,6 +361,7 @@ function buildProps(group: Group): void {
   // brass desk lamp (back left) with a warm emissive bulb that blooms
   const lamp = new Group();
   const brass = new MeshStandardMaterial({ color: "#b8893c", metalness: 0.85, roughness: 0.32 });
+  brass.userData.envBoost = 2;
   const base = new Mesh(new CylinderGeometry(0.3, 0.34, 0.07, 28), brass);
   base.position.y = 0.035;
   base.castShadow = true;
@@ -373,12 +374,13 @@ function buildProps(group: Group): void {
   arm2.rotation.z = 1.05;
   arm2.castShadow = true;
   const shade = new Mesh(new ConeGeometry(0.26, 0.36, 28, 1, true), new MeshStandardMaterial({ color: "#b8893c", metalness: 0.85, roughness: 0.3, side: DoubleSide }));
+  (shade.material as Material).userData.envBoost = 2;
   shade.position.set(0.98, 1.36, 0);
   shade.rotation.z = 0.55;
   shade.castShadow = true;
   const bulb = new Mesh(new SphereGeometry(0.1, 16, 12), new MeshStandardMaterial({ color: "#fff2d6", emissive: "#ffd89a", emissiveIntensity: 3.2, roughness: 0.4 }));
   bulb.position.set(1.05, 1.24, 0);
-  lampGlow = new PointLight(t.light.key, 1.6 / PI, 4.5, 2);
+  lampGlow = new PointLight(t.light.key, 1.6, 4.5, 2);
   lampGlow.position.set(1.08, 1.1, 0);
   lamp.add(base, arm1, arm2, shade, bulb, lampGlow);
   add(lamp, -sideX + 0.05, backZ + 0.05, -0.55);
@@ -397,12 +399,12 @@ function applyThemeLights(): void {
   scene.background = new Color(t.bg);
   (scene.fog as Fog).color.set(t.fog);
   keyLight.color.set(t.light.key);
-  keyLight.intensity = t.light.keyIntensity / PI;
+  keyLight.intensity = t.light.keyIntensity;
   fillLight.color.set(t.light.fill);
-  fillLight.intensity = t.light.fillIntensity / PI;
+  fillLight.intensity = t.light.fillIntensity;
   hemi.color.set(t.light.key);
   hemi.groundColor.set(t.table);
-  hemi.intensity = t.light.ambient / PI;
+  hemi.intensity = t.light.ambient;
   dustMat.color.set(t.light.key);
   if (lampGlow) lampGlow.color.set(t.light.key);
   paintBackdrop();
@@ -418,6 +420,18 @@ export function setTheme(next: string): void {
 export function currentTheme(): string { return themeId; }
 
 let envTex: Texture | null = null;
+/** r160 scaled scene.environment by each material's envMapIntensity; the engine (as r163+) does not, so
+ * each standard material takes the room as its own envMap at the page's intensity (detailed only). */
+function applyEnv(): void {
+  scene.environment = null;
+  world?.traverse((o) => {
+    const mm = (o as Mesh).material as unknown;
+    for (const m of Array.isArray(mm) ? mm : [mm]) if (m instanceof MeshStandardMaterial) {
+      m.envMap = look?.detailed ? envTex : null;
+      m.envMapIntensity = ENV_INTENSITY * (Number(m.userData.envBoost) || 1);
+    }
+  });
+}
 /** The look for the frame's graphics level; cheap when nothing changed. */
 export function applyLook(next: Look): void {
   if (look && JSON.stringify(look) === JSON.stringify(next)) return;
@@ -428,12 +442,11 @@ export function applyLook(next: Look): void {
   if (shadows) keyLight.shadow.mapSize = next.shadows;
   if (next.detailed) {
     if (!envTex) {
-      try { envTex = new PMREMGenerator().fromScene(new RoomEnvironment(), 0.04).texture; }
+      try { envTex = new PMREMGenerator(renderer).fromScene(new RoomEnvironment(renderer), 0.04).texture; }
       catch (e) { console.warn("environment:", e instanceof Error ? e.message : String(e)); }
     }
-    scene.environment = envTex;
-    scene.environmentIntensity = ENV_INTENSITY;
-  } else scene.environment = null;
+  }
+  applyEnv();
   backdrop.visible = next.detailed;
   dust.visible = next.ambient;
   dustGeo.setDrawRange(0, next.budget.dust);
@@ -484,7 +497,9 @@ export function setPlayfield(x: number, y: number, w: number, h: number, W: numb
   const next = { x, y, w: Math.max(1, w), h: Math.max(1, h), W: Math.max(1, W), H: Math.max(1, H) };
   if (Object.entries(next).every(([k, v]) => Math.abs(v - (view as Record<string, number>)[k]!) < 0.5)) return;
   view = next;
+  camera.aspect = view.w / view.h;
   camera.setViewOffset(view.w, view.h, -view.x, -view.y, view.W, view.H);
+  camera.updateProjectionMatrix();
   computeFraming();
 }
 function computeFraming(): void {
@@ -506,7 +521,12 @@ function computeFraming(): void {
   const fog = scene.fog as Fog;
   fog.near = dist * FOG_NEAR_K;
   fog.far = dist * FOG_FAR_K;
-  keyLight.shadow.distance = Math.max(L.tableW, L.tableD) + dist;
+  // key light shadow frustum covers the table (the page's box)
+  const s = Math.max(L.tableW, L.tableD) / 2 + 1;
+  const sc = keyLight.shadow.camera as OrthographicCamera;
+  sc.left = -s; sc.right = s; sc.top = s; sc.bottom = -s;
+  sc.near = 1; sc.far = 30;
+  sc.updateProjectionMatrix();
   keyLight.target.position.set(0, 0, L.tableCz);
   backdrop.position.copy(camTarget);
 }
