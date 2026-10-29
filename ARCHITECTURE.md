@@ -1,6 +1,6 @@
 # Card Mosaic — Architecture Contract
 
-A StarHermit engine script game (engine 1.23.0, host API 1.21). The entry is `native/main.ts` (starhermit.txt `engine.entry`); the native modules import the pure game modules in `js/` as ES modules (`allowJs`), and `js/strings.js` / `js/i18n.js` load as classic scripts (`loadClassic`). `js/rules.js`, `js/rng.js`, `js/content.js`, `js/session.js`, `js/storage.js`, `js/migrate.js` and `js/themes.js` stay environment-agnostic: the node tests and `server.js` import them. The browser build's DOM shell (index.html, css/, js/main.js, ui.js, render.js, audio.js, platform.js, gfx*.js, vendor/three, the SDK and page helpers) was replaced by `native/*.ts`; `index.html` is now the engine's web loader written by `npm run package`.
+A StarHermit engine script game (engine 1.24.0, host API 1.21). The entry is `native/main.ts` (starhermit.txt `engine.entry`); the native modules import the pure game modules in `js/` as ES modules (`allowJs`), and `js/strings.js` / `js/i18n.js` load as classic scripts (`loadClassic`). `js/rules.js`, `js/rng.js`, `js/content.js`, `js/session.js`, `js/storage.js`, `js/migrate.js` and `js/themes.js` stay environment-agnostic: the node tests and `server.js` import them. The browser build's DOM shell (index.html, css/, js/main.js, ui.js, render.js, audio.js, platform.js, gfx*.js, vendor/three, the SDK and page helpers) was replaced by `native/*.ts`; `index.html` is now the engine's web loader written by `npm run package`.
 
 ## Engine client (native/)
 
