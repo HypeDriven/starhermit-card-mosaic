@@ -9,7 +9,7 @@
 | Genre | Single-player edge-matching placement puzzle; perfect information, deterministic, seeded |
 | Players | 1. Asynchronous comparison through the StarHermit `high-score` leaderboard when signed in; local boards always |
 | Session | 20 s (Learn lesson) to ~8 min (6×5 mastery stage or Grand Table); Daily ≈5 min |
-| Platforms | A StarHermit engine script game (engine 1.29.0, host API 1.31): played natively by the StarHermit client and in desktop and mobile browsers by the engine's web runtime, from one package |
+| Platforms | A StarHermit engine script game (engine 1.30.0, host API 1.32): played natively by the StarHermit client and in desktop and mobile browsers by the engine's web runtime, from one package |
 | Rendering | `starhermit:scene` draws the studio table, props and lighting; `starhermit:ui` draws the felt board (the input surface), HUD and every screen over it |
 | Versions | `BUILD_VERSION 1.0.0` (`js/session.js`), `CONTENT_VERSION 1`, `RULES_VERSION 1`, `REPLAY_SCHEMA 1`, save schema 1 |
 
@@ -17,7 +17,7 @@ File map (everything that ships or tests the game):
 
 | Path | Owns |
 |---|---|
-| `starhermit.txt` | Manifest: name, description, owner, `server=score-script.js`, cover, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.29.0`, `engine.minor=31`, capabilities `platform,storage,clipboard`, `control.*` keys and `engine.gamepad.*` buttons per action |
+| `starhermit.txt` | Manifest: name, description, owner, `server=score-script.js`, cover, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.30.0`, `engine.minor=32`, capabilities `platform,storage,clipboard`, `control.*` keys and `engine.gamepad.*` buttons per action |
 | `index.html`, `starhermit-files.json` | The engine's web loader and the package's file index, written by `npm run package` (never edited by hand) |
 | `native/main.ts` | Entry: phase machine, fixed-step play clock, selection, command pipeline, lessons, outcomes, achievements, local boards, snapshot, leaderboard posting, input routing, lifecycle |
 | `native/screens.ts` | Top bar, play layout (rails, drawers, action bar), every screen and overlay, toasts, captions, drawn glyphs |
