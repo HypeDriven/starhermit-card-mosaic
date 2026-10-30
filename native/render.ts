@@ -456,12 +456,12 @@ export function applyLook(next: Look): void {
     denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: next.ao === "high" ? 6 : 4, rings: 2, samples: next.ao === "high" ? 16 : 8, radiusExponent: 2 },
   };
   // High threshold: only the lamp bulb and bright highlights bloom.
-  // The page's r160 UnrealBloomPass strength squared (minor 29 bloom follows r185).
-  renderer.bloom = next.bloom ? { strength: 0.25, radius: 0.5, threshold: 0.9, resolution: 0.5 } : null;
+  // The page's r160 UnrealBloomPass at its own strength (bloom model r160).
+  renderer.bloom = next.bloom ? { model: "r160", strength: 0.5, radius: 0.5, threshold: 0.9, resolution: 0.5 } : null;
   // The browser build's grade pass: a gentle S-curve (0.18), saturation 1.07,
   // cool shadows / warm highlights, the 0.2 vignette.
   renderer.grade = next.grade ? {
-    space: "display", contrast: 0.09, saturation: 1.07,
+    space: "display", contrastCurve: "s", contrast: 0.18, saturation: 1.07,
     shadows: [0.97, 0.985, 1.03], highlights: [1.035, 1.0, 0.965], split: [0.2, 0.8],
     vignette: { amount: 0.2, inner: 0.38, outer: 0.85 },
   } : null;
