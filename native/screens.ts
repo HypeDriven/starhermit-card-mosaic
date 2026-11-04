@@ -72,19 +72,9 @@ function button(b: Btn, width: number | null = null): void {
 }
 /** Buttons at their own widths in rows that wrap at `width` (CSS flex-wrap). */
 function flow(label: string, list: Btn[], width: number, align: "start" | "center" | "end" = "start", gap = 8): void {
-  const rows: Btn[][] = [[]];
-  let used = 0;
-  for (const b of list) {
-    const bw = Math.min(width, buttonWidth(b.text, b.style ?? PLAIN));
-    if (rows[rows.length - 1]!.length && used + gap + bw > width) { rows.push([]); used = 0; }
-    used += (rows[rows.length - 1]!.length ? gap : 0) + bw;
-    rows[rows.length - 1]!.push(b);
-  }
-  ui.column(label, () => {
-    rows.forEach((row, ri) => ui.row(`${label}-r${ri}`, () => {
-      for (const b of row) button(b, buttonWidth(b.text, b.style ?? PLAIN) > width ? width : null);
-    }, { spacing: gap, align: "center" }));
-  }, { spacing: gap, align, width });
+  ui.row(label, () => {
+    for (const b of list) button(b, buttonWidth(b.text, b.style ?? PLAIN) > width ? width : null);
+  }, { wrap: true, width, gap, justify: align, align: "center" });
 }
 /** Text up to `width` wide: one label when it fits, else a paragraph. */
 function para(text: string, width: number, cls?: string | null, id?: string, center = false): void {
@@ -583,7 +573,7 @@ function journeyScreen(L: Layout): void {
     const accent = currentPalette().theme.accent;
     for (const [num, list] of chapters) {
       ui.style("h3").heading(tr("Chapter {n}", { n: num }));
-      const btns: { w: number; build: () => void }[] = [];
+      const btns: (() => void)[] = [];
       list.forEach((st, i) => {
         const rec = p.journey[st.id] || {};
         const completed = !!rec.completed;
@@ -595,7 +585,7 @@ function journeyScreen(L: Layout): void {
         const name = stageName(st.name);
         const aria = name + (completed ? tr(", complete, {n} of 3 stars", { n: nStars }) : unlocked ? tr(", available") : tr(", locked"));
         const bw = Math.max(72, textWidth(name, "stage-name") + 24, unlocked ? 0 : textWidth(tr("Locked"), "stage-lock") + 24);
-        btns.push({ w: bw, build: () => {
+        btns.push(() => {
           if (ui.style("btn", "stage-btn", { width: bw }).id(`stage-${st.index}`).button(aria, {
             disabled: !unlocked,
             content: () => ui.column(`stage-${st.index}-face`, () => {
@@ -605,13 +595,9 @@ function journeyScreen(L: Layout): void {
               if (!unlocked) ui.style("stage-lock").label(tr("Locked"));
             }, { align: "center", spacing: 2 }),
           }) && unlocked) startJourney(st.index);
-        } });
+        });
       });
-      // flex-wrap rows
-      const rows: (typeof btns)[] = [[]];
-      let used = 0;
-      for (const b of btns) { if (rows[rows.length - 1]!.length && used + 8 + b.w > w) { rows.push([]); used = 0; } used += (rows[rows.length - 1]!.length ? 8 : 0) + b.w; rows[rows.length - 1]!.push(b); }
-      ui.column(`chapter-${num}`, () => rows.forEach((row, ri) => ui.row(`chapter-${num}-r${ri}`, () => { for (const b of row) b.build(); }, { spacing: 8, align: "stretch" })), { spacing: 8 });
+      ui.row(`chapter-${num}`, () => { for (const build of btns) build(); }, { wrap: true, width: w, gap: 8, align: "stretch" });
     }
     button(backButton("btn-journey-back", "modes", tr("Back")));
   });
@@ -946,15 +932,7 @@ function settingsOverlay(L: Layout): void {
         ui.grid("bindings", () => {
           rows.forEach(([acts, text], i) => {
             const keys = acts.flatMap((a) => bindings(a).filter((b) => b.device === "keyboard").map((b) => b.label));
-            const lines: string[][] = [[]];
-            let used = 0;
-            for (const k of keys) {
-              const kw = textWidth(k, "bindings-key") + 4;
-              if (lines[lines.length - 1]!.length && used + kw > keyW) { lines.push([]); used = 0; }
-              used += kw;
-              lines[lines.length - 1]!.push(k);
-            }
-            ui.column(`bind-${i}`, () => lines.forEach((ln, li) => ui.row(`bind-${i}-${li}`, () => { for (const k of ln) ui.style("bindings-key").label(k); }, { spacing: 4 })), { spacing: 2, width: keyW });
+            ui.row(`bind-${i}`, () => { for (const k of keys) ui.style("bindings-key").label(k); }, { wrap: true, width: keyW, gap: { row: 2, column: 4 } });
             para(tr(text), w - keyW - 16, "body");
           });
         }, { columns: [{ width: keyW }, { fr: 1 }], gap: { row: 6, column: 16 }, width: w });
