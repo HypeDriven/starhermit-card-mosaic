@@ -193,18 +193,18 @@ The browser build's `color-mix()` shades (felt panel 92 % felt + black, panel bo
 
 **Hero.** The felt panel. The 3D studio frames it: FOV 38°, 55° elevation, look-at biased toward the tray, fog at 0.9×–3.2× camera distance, ACES filmic tone mapping, a warm key light with soft shadows, a cool fill and a hemisphere fill (intensities ÷ π for the engine's physical lights), and at detailed quality a seeded glazed mug, pencil, spare-card stack, a brass desk lamp with a glowing bulb and its own light, a window-light patch, a wood-grain lacquered table, felt fibre, the studio-wall gradient on a backdrop dome and RoomEnvironment reflections (`PMREMGenerator.fromScene`, intensity 0.3).
 
-**Graphics levels** (`native/quality.ts`, from the runtime's tier `frame().quality`; the level choice, render scale, adaptive resolution and frame-rate limit are the runtime's Options):
+**Graphics levels** (the level choice, render scale, adaptive resolution and frame-rate limit are the runtime's Options). Shadows and their map size, AO, bloom resolution, grade and anti-aliasing are the level's own (`levelSettings()`); `native/quality.ts` keys the game's art to the level's quality tier. At each tier's anchor level (quantum, molecular, terrestrial, galactic):
 
 | | Low | Balanced | High | Ultra |
 |---|---|---|---|---|
 | shadows | off | 1024 | 2048 | 4096 |
-| ao / bloom / grade | off / off / off | off / on / on | on / on / on | high / on / on |
+| ao / bloom / grade | off / off / off | off / ½ res / on | ½ res, 8 samples / ½ res / on | full res, 16 samples / full res / on |
 | anti-aliasing | off | FXAA | SMAA | MSAA |
 | detail / ambient motion | plain / off | detailed / on | detailed / on | detailed / on |
 | materials | Lambert | Standard | Physical (clearcoat table and mug) | Physical |
 | table corner segments / dust motes | 4 / 30 | 8 / 45 | 12 / 70 | 16 / 90 |
 
-Dust grows with the level within a tier (×1.64 a level, at most twice, 90 max). Bloom threshold 0.9 (the lamp bulb); the grade is a gentle S-curve, saturation 1.07, warm highlights / cool shadows and a 0.2 vignette. The felt panel's sheen, inner shadow, recessed cells and card paper sheen show at detailed quality.
+Dust grows with the level's particle budget against the tier's anchor (at most twice, 90 max); higher levels within a tier get the level's larger shadow map, AO and bloom. Bloom threshold 0.9 (the lamp bulb); the grade is a gentle S-curve, saturation 1.07, warm highlights / cool shadows and a 0.2 vignette. The felt panel's sheen, inner shadow, recessed cells and card paper sheen show at detailed quality.
 
 **Motion.** Card quarter turns ease over ≈ 0.18 s; a selected tray card lifts 6 px; a hint pulses a ring once a second (a static outline under reduced motion); a new match glows the panel for 0.7 s and pops the score total; an invalid try shakes the table 0.018, a completed mosaic 0.05; any other ending dims the table under a veil to 45 %. Reduced motion (the runtime's setting) turns the animations off, stops the dust and the shake, and opens results after 60 ms.
 

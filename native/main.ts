@@ -17,7 +17,7 @@
 // while a round is active with nothing over it: pauses, a hidden window and
 // slow frames never cost time, and play scripts replay exactly.
 import "./shim.ts";
-import { frame, onFixedUpdate, onQuit, onRender, onResume, onStart, onSuspend, onUpdate, onPreferencesChange, preferences, setFixedRate } from "starhermit:engine";
+import { frame, levelSettings, onFixedUpdate, onQuit, onRender, onResume, onStart, onSuspend, onUpdate, onPreferencesChange, preferences, setFixedRate } from "starhermit:engine";
 import { onAction, vibrate } from "starhermit:input";
 import * as ui from "starhermit:ui";
 import { onSessionEnded, onPlayerChange } from "starhermit:platform";
@@ -758,10 +758,10 @@ onAction((e) => {
 let lookKey = "";
 function applyLook(): void {
   const f = frame();
-  const key = `${f.quality}:${f.levelIndex}`;
+  const key = f.level;
   if (key === lookKey) return;
   lookKey = key;
-  const look = lookFor(f.quality, f.levelIndex);
+  const look = lookFor(levelSettings(f.level));
   render.applyLook(look);
   board.setDetailed(look.detailed);
 }

@@ -439,6 +439,7 @@ export function applyLook(next: Look): void {
   const shadows = next.shadows > 0;
   renderer.shadowMap.enabled = shadows;
   keyLight.castShadow = shadows;
+  // Since minor 23 the engine keeps the game's mapSize whatever the level, so the level's size is set here.
   if (shadows) keyLight.shadow.mapSize = next.shadows;
   if (next.detailed) {
     if (!envTex) {
@@ -450,14 +451,17 @@ export function applyLook(next: Look): void {
   backdrop.visible = next.detailed;
   dust.visible = next.ambient;
   dustGeo.setDrawRange(0, next.budget.dust);
-  renderer.ao = next.ao === "off" ? null : {
+  // The level's AO (levelSettings()): resolution and samples; full-resolution AO
+  // (the engine's "high") takes the browser's Ultra denoise radius.
+  const ao = next.ao, full = !!ao && ao.resolution >= 1;
+  renderer.ao = ao && {
     blendIntensity: 0.75, radius: 0.5, distanceExponent: 1.5, thickness: 1.0, scale: 1.0,
-    samples: next.ao === "high" ? 16 : 8,
-    denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: next.ao === "high" ? 6 : 4, rings: 2, samples: next.ao === "high" ? 16 : 8, radiusExponent: 2 },
+    samples: ao.samples, resolution: ao.resolution,
+    denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: full ? 6 : 4, rings: 2, samples: ao.denoiseSamples, radiusExponent: 2 },
   };
   // High threshold: only the lamp bulb and bright highlights bloom.
   // The page's r160 UnrealBloomPass at its own strength (bloom model r160).
-  renderer.bloom = next.bloom ? { model: "r160", strength: 0.5, radius: 0.5, threshold: 0.9, resolution: 0.5 } : null;
+  renderer.bloom = next.bloom !== null ? { model: "r160", strength: 0.5, radius: 0.5, threshold: 0.9, resolution: next.bloom } : null;
   // The browser build's grade pass: a gentle S-curve (0.18), saturation 1.07,
   // cool shadows / warm highlights, the 0.2 vignette.
   renderer.grade = next.grade ? {

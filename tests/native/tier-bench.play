@@ -1,0 +1,25 @@
+# Graphics-tier bench (tools/engine-tier-bench.mjs): a Practice (Casual)
+# round on the studio table: a hint, a placement and its undo, ~600 measured frames.
+until 300 Play
+frames 10
+click Play
+until 60 Choose a mode
+frames 10
+click Practice
+until 60 Casual
+frames 10
+click Casual
+until 120 Rotate
+frames 120
+measure start
+key KeyH 2
+frames 100
+click Tray slot 1,
+frames 5
+click empty, legal placement
+frames 150
+key KeyU 2
+frames 150
+key KeyH 2
+frames 200
+measure stop
