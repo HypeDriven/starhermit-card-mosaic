@@ -115,7 +115,7 @@ export function toast(text: string, kind: "info" | "warn" | "success" = "info"):
   const atTop = app.screen === "results";
   const phone = !(v.width > v.height && v.height <= 540) && v.width < 700;
   ui.toast!(text, {
-    duration: 4.2, announce: false, position: atTop ? "top" : "bottom", offset: atTop ? 0 : !app.screen && phone ? 80 : 56,
+    duration: 4.2, announce: false, position: atTop ? "top" : "bottom", offset: atTop ? 0 : app.screen === "play" && phone ? 80 : 56,
     style: ["toast", ...(kind === "warn" ? ["toast-warn"] : kind === "success" ? ["toast-success"] : [])],
   });
 }
