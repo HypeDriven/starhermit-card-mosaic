@@ -28,12 +28,12 @@ File map (everything that ships or tests the game):
 | `native/audio.ts` | Clips per event, rendered music and ambience voices on the runtime's buses |
 | `native/platform.ts` | Save document, foreign-save and settings migration, game settings, player, invite link, leaderboard read and post, platform clock |
 | `native/style.ts`, `tools/ui-style.css`, `assets/ui-style.json` | The class-based style sheet (converted with `starhermit css`), theme tokens per table theme |
-| `native/i18n.ts` | Locale from the runtime's interface language over `js/strings.js` / `js/i18n.js` (classic scripts) and `js/platform-strings.js` |
-| `native/shim.ts` | `localStorage` over the device's `starhermit:storage` for `js/storage.js`'s snapshot |
+| `native/i18n.ts` | The engine's `strings` tables (`assets/strings.json`) in the runtime's interface language; account lines are `starhermit.*` |
+| `native/shim.ts` | Installs the engine's `localStorage` for `js/storage.js`'s snapshot |
 | `js/rng.js`, `js/rules.js`, `js/content.js`, `js/session.js`, `js/themes.js` | Pure rules, content, session, palettes (unchanged from the browser build; also imported by the node tests and `server.js`) |
 | `js/storage.js` | Merge helpers, `journeyStars`, achievements, local-board and snapshot records (environment-agnostic) |
 | `js/migrate.js` | The engine save document, the browser build's cloud save and settings → engine save and game settings |
-| `js/strings.js`, `js/i18n.js`, `js/platform-strings.js` | Translation tables and the localizer (nine locales) |
+| `assets/strings.json` | Translation tables (nine locales) |
 | `js/motifs.js` | The motif glyph definitions (canvas and SVG) the native glyphs were taken from |
 | `score-script.js` | StarHermit platform script: range-checks a finished round's total and posts it to the `high-score` board |
 | `server.js` | Local development server (static host, `/api/v1/*` with replay-validated boards); not part of the package |
@@ -212,7 +212,7 @@ Dust grows with the level's particle budget against the tier's anchor (at most t
 
 **Mix.** The runtime's buses: music (0.7 folded into each voice), effects (event clips at 0.9, ambience at 0.5) and interface (the menu open/close cues); the player's volumes, mute and voice limit are in the runtime's Options. Pausing ducks the ambience to a quarter and rests the music. Clips load one at a time once the mixer runs (in a browser after the first press).
 
-**Music and ambience.** A-minor pentatonic (A3–A5) rendered once into clips: a three-sine pad on a new root every 8 beats, triangle notes on 60 % of the off-beats, and in play a 110 / 82 Hz pulse; one beat a second on menus, two in play, seeded by the round. Ambience: a 6 s low-passed (320 Hz) room-tone loop at 0.05 with cross-faded ends, plus single chimes every 4–12 s at the theme's density (studio 0.5, slate 0.25, verdant 0.7, ember 0.4, porcelain 0.3).
+**Music and ambience.** A-minor pentatonic (A3–A5) rendered offline once into clips: a three-sine pad on a new root every 8 beats, triangle notes on 60 % of the off-beats, and in play a 110 / 82 Hz pulse; one beat a second on menus, two in play, seeded by the round. Ambience: a 6 s low-passed (320 Hz) room-tone loop at 0.05 with cross-faded ends, plus single chimes every 4–12 s at the theme's density (studio 0.5, slate 0.25, verdant 0.7, ember 0.4, porcelain 0.3).
 
 **SFX event table** (`sfx/manifest.txt`, 48 kHz mono Opus):
 
@@ -240,7 +240,7 @@ Captions (on by default) print "♪ card placed / recalled / swapped / rotated /
 
 ## 10. Localization
 
-Nine locales: **en-US, en-GB, es-419, es-ES, de-DE, fr-FR, fr-CA, pt-BR, it-IT**. English text is the lookup key; `js/strings.js` holds a row per key with es-419, de-DE, fr-FR, pt-BR and it-IT, and en-GB, es-ES and fr-CA list their differences. The locale is the runtime's interface language (`preferences().language`: the player's choice in Options › Language, else the account's preferred language, else the device's), mapped to the nearest shipped locale (`es-MX → es-419`, `en-AU → en-GB`, `pt-PT → pt-BR`); it changes live, as every string is looked up each frame. The account lines (sign in, invite, leaderboard line) are `js/platform-strings.js`'s tables. "Card Mosaic" and "StarHermit" are names. `tests/i18n.test.mjs` collects every key the client and content show and fails on a missing translation, a dropped placeholder or a key nothing shows.
+Nine locales: **en-US, en-GB, es-419, es-ES, de-DE, fr-FR, fr-CA, pt-BR, it-IT**. English text is the lookup key; `assets/strings.json` holds the engine's `strings` tables, and en-GB, es-ES and fr-CA list their differences. The locale is the runtime's interface language (`preferences().language`: the player's choice in Options › Language, else the account's preferred language, else the device's), read along the engine's locale chain (`es-MX → es-419`, `en-AU → en-GB`, `pt-PT → pt-BR`); it changes live, as every string is looked up each frame. The account lines (sign in, invite, leaderboard line) are `js/platform-strings.js`'s tables. "Card Mosaic" and "StarHermit" are names. `tests/i18n.test.mjs` collects every key the client and content show and fails on a missing translation, a dropped placeholder or a key nothing shows.
 
 ## 11. Accessibility
 

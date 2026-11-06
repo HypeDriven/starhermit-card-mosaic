@@ -8,7 +8,7 @@
 //   build wrote (the JS SDK's zipped save.json: the same parts plus its
 //   settings) shows as foreign and is merged in and replaced once;
 // - the paused round's snapshot stays on the device (js/storage.js through
-//   the localStorage shim, shim.ts), as the browser build kept it;
+//   the engine's localStorage, shim.ts), as the browser build kept it;
 // - the game's own settings (table theme, colour-vision palette,
 //   left-handed layout, hold to confirm, timing assist, haptics, captions,
 //   the guest's display name) are `settings` (game.<key>, synced with the
@@ -24,7 +24,7 @@
 // presence) were for local development hosting and are not called: the
 // platform runs score-script.js, and the boards are its leaderboards.
 import type { JsonValue } from "starhermit:engine";
-import { connectGame, inviteLink as fetchInviteLink, leaderboards, onPlayerChange, player, profile, serverNow, serverTime, sessions } from "starhermit:platform";
+import { inviteLink as fetchInviteLink, leaderboards, onPlayerChange, player, profile, serverNow, serverTime } from "starhermit:platform";
 import { saves, settings as store, storage } from "starhermit:storage";
 import * as M from "../js/migrate.js";
 import { tr } from "./i18n.ts";
@@ -209,39 +209,6 @@ export async function fetchLeaderboard(friendsOnly = false): Promise<{ ok: boole
 
 /** Signed in only: post a finished round's total through score-script.js; { posted, rank }. Never rejects. */
 export async function postLeaderboard(total: number): Promise<{ posted: boolean; rank: number | null }> {
-  const me = player();
-  if (!me) return { posted: false, rank: null };
-  const score = Math.max(0, Math.round(total));
-  let accepted: string[] = [];
-  try {
-    const sessionId = await sessions.practice();
-    accepted = await new Promise<string[]>((resolve) => {
-      const socket = connectGame(sessionId);
-      let done = false;
-      const finish = (list: string[]): void => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        socket.close();
-        resolve(list);
-      };
-      const timer = setTimeout(() => finish([]), 15000);
-      socket.on("open", () => { socket.sendCommand({ type: "result", scores: { "high-score": score } }); });
-      socket.on("game", (data) => {
-        const d = data as { type?: string; accepted?: string[] } | null;
-        if (d && d.type === "result-ack") finish(Array.isArray(d.accepted) ? d.accepted : []);
-      });
-      socket.on("error", () => finish([]));
-      socket.on("stopped", () => finish([]));
-      socket.on("abandoned", () => finish([]));
-    });
-  } catch { return { posted: false, rank: null }; }
-  if (!accepted.includes("high-score")) return { posted: false, rank: null };
-  try {
-    const id = await highScoreBoard();
-    if (!id) return { posted: true, rank: null };
-    const r = await leaderboards.entries(id, { pageSize: 100 });
-    const mine = r.items.find((e) => e.userId === me.userId);
-    return { posted: true, rank: mine ? mine.rank : null };
-  } catch { return { posted: true, rank: null }; }
+  const r = await leaderboards.submitScore("high-score", Math.max(0, Math.round(total)));
+  return { posted: r.accepted, rank: r.rank };
 }

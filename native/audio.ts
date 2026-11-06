@@ -11,15 +11,13 @@
 // ambience → "effects", the menu open/close cues → "interface". The old
 // default bus levels (music 70 %, effects 90 %, ambience 50 %) are folded
 // into each sound's gain; the pause duck (master to 25 %) holds the music
-// and fades the ambience. The music and ambience voices, which the browser
-// build made with oscillators and filtered noise, are rendered once into
-// clips (createClip) with the same envelopes; the synthesized stand-ins it
-// played while a sample loaded are not ported (the engine's web runtime drops
-// clip loads while a synthesis graph changes: the arrow-exodus finding).
-// The sample clips all load at once in onStart; the voices render and the
-// music and ambience start once the mixer runs (in a browser after the first
-// press).
-import { context, createClip, loadClip, play as playClip, type AudioClip, type Bus, type Sound } from "starhermit:audio";
+// and fades the ambience. The music and ambience voices, oscillators and
+// filtered noise as the browser build made them, are offline graphs rendered
+// once into clips with the same envelopes; the synthesized stand-ins it played
+// while a sample loaded are not ported. The sample clips load and the voices
+// render in onStart; the music and ambience start once the mixer runs (in a
+// browser after the first press).
+import { OfflineAudioContext, context, createClip, loadClip, play as playClip, type AudioClip, type Bus, type GainNode, type Sound } from "starhermit:audio";
 import { createRng } from "../js/rng.js";
 
 const LEVEL = { music: 0.7, effects: 0.9, ambience: 0.5 };
@@ -39,6 +37,7 @@ export function loadSfx(): void {
   for (const name of new Set(Object.values(SAMPLES))) {
     loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); }, (e: unknown) => console.warn(`sfx ${name}: ${String(e)}`));
   }
+  void renderVoices().catch((e: unknown) => console.warn(`audio: ${String(e)}`));
 }
 
 /** Plays a logical event's sample. */
@@ -53,81 +52,59 @@ export function event(name: string): void {
 
 // -- rendered voices ------------------------------------------------------------------------
 const RATE = 11025;
-/** js/audio.js _envGain: exponential from 0.0001 to `peak` over `attack`, back to 0.0001 over `decay`. */
-function env(t: number, peak: number, attack: number, decay: number): number {
-  if (t < 0) return 0;
-  if (t < attack) return 0.0001 * Math.pow(peak / 0.0001, t / attack);
-  const d = t - attack;
-  if (d < decay) return peak * Math.pow(0.0001 / peak, d / decay);
-  return 0;
+/** js/audio.js _envGain: exponential from 0.0001 to `peak` over `attack`, back to 0.0001 by `end`. */
+function envelope(off: OfflineAudioContext, peak: number, attack: number, end: number): GainNode {
+  const g = off.createGain();
+  g.gain.setValueAtTime(0.0001, 0);
+  g.gain.exponentialRampToValueAtTime(peak, attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, end);
+  return g;
+}
+function voice(off: OfflineAudioContext, type: "sine" | "triangle", f: number, g: GainNode, end: number): void {
+  const osc = off.createOscillator();
+  osc.type = type; osc.frequency.value = f;
+  osc.connect(g).connect(off.destination);
+  osc.start(); osc.stop(end);
 }
 /** A pad chord (root × 0.5, × 0.75, × 1 sines) rising over 1.2 s and gone by `len` (eight beats). */
-function padClip(root: number, len: number): AudioClip {
-  const n = Math.round((len + 0.1) * RATE);
-  const out = new Float32Array(n);
-  for (const mult of [1, 1.5, 2]) {
-    const f = root * mult * 0.5, peak = 0.035 / mult;
-    for (let i = 0; i < n; i++) {
-      const t = i / RATE;
-      const e = t < 1.2 ? 0.0001 * Math.pow(peak / 0.0001, t / 1.2) : t < len ? peak * Math.pow(0.0001 / peak, (t - 1.2) / (len - 1.2)) : 0;
-      out[i]! += Math.sin(2 * Math.PI * f * t) * e;
-    }
-  }
-  return createClip([out], RATE);
+async function renderPad(root: number, len: number): Promise<AudioClip> {
+  const off = new OfflineAudioContext(1, Math.round((len + 0.1) * RATE), RATE);
+  for (const mult of [1, 1.5, 2]) voice(off, "sine", root * mult * 0.5, envelope(off, 0.035 / mult, 1.2, len), len);
+  return createClip(await off.startRendering());
 }
 /** A triangle note: to 0.04 in 20 ms, gone by 0.6 s. */
-function noteClip(f: number): AudioClip {
-  const rate = RATE * 2;
-  const n = Math.round(0.7 * rate);
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const t = i / rate;
-    const ph = (f * t) % 1;
-    out[i] = (1 - 4 * Math.abs(ph - 0.5)) * env(t, 0.04, 0.02, 0.58);
-  }
-  return createClip([out], rate);
+async function renderNote(f: number): Promise<AudioClip> {
+  const off = new OfflineAudioContext(1, Math.round(0.7 * RATE * 2), RATE * 2);
+  voice(off, "triangle", f, envelope(off, 0.04, 0.02, 0.6), 0.6);
+  return createClip(await off.startRendering());
 }
 /** A bass pulse: a sine to `peak` in 10 ms, gone by 0.18 s. */
-function bassClip(f: number, peak: number): AudioClip {
-  const n = Math.round(0.25 * RATE);
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) { const t = i / RATE; out[i] = Math.sin(2 * Math.PI * f * t) * env(t, peak, 0.01, 0.17); }
-  return createClip([out], RATE);
+async function renderBass(f: number, peak: number): Promise<AudioClip> {
+  const off = new OfflineAudioContext(1, Math.round(0.25 * RATE), RATE);
+  voice(off, "sine", f, envelope(off, peak, 0.01, 0.18), 0.18);
+  return createClip(await off.startRendering());
 }
 /** An ambience chime (js/audio.js chime(): a sine and its octave at a quarter, 1.2 s). */
-function chimeClip(f: number): AudioClip {
-  const rate = RATE * 2;
-  const n = Math.round(1.3 * rate);
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const t = i / rate;
-    out[i] = Math.sin(2 * Math.PI * f * t) * env(t, 0.05, 0.01, 1.2) + Math.sin(4 * Math.PI * f * t) * env(t, 0.0125, 0.01, 0.84);
-  }
-  return createClip([out], rate);
+async function renderChime(f: number): Promise<AudioClip> {
+  const off = new OfflineAudioContext(1, Math.round(1.3 * RATE * 2), RATE * 2);
+  voice(off, "sine", f, envelope(off, 0.05, 0.01, 1.21), 1.21);
+  voice(off, "sine", f * 2, envelope(off, 0.0125, 0.01, 0.85), 0.85);
+  return createClip(await off.startRendering());
 }
-/** The room tone: noise lowpassed at 320 Hz, at 0.05, as a 6 s loop whose ends cross-fade. */
-function roomToneClip(): AudioClip {
-  const n = 6 * RATE, fade = RATE;
-  const raw = new Float32Array(n + fade);
-  const rng = createRng("cardmosaic:room");
-  for (let i = 0; i < raw.length; i++) raw[i] = rng.float() * 2 - 1;
-  // RBJ biquad lowpass, Q 1
-  const w = (2 * Math.PI * 320) / RATE, alpha = Math.sin(w) / 2, c = Math.cos(w), a0 = 1 + alpha;
-  const b0 = (1 - c) / 2 / a0, b1 = (1 - c) / a0, b2 = b0, a1 = (-2 * c) / a0, a2 = (1 - alpha) / a0;
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-  for (let i = 0; i < raw.length; i++) {
-    const x0 = raw[i]!;
-    const y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-    x2 = x1; x1 = x0; y2 = y1; y1 = y0;
-    raw[i] = y0;
-  }
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    let v = raw[i]!;
-    if (i < fade) { const k = i / fade; v = v * k + raw[n + i]! * (1 - k); }
-    out[i] = v * 0.05;
-  }
-  return createClip([out], RATE);
+const ROOM_GAIN = 0.05;
+/** The room tone: white noise looping every 6 s, lowpassed at 320 Hz: periodic once settled, so no seam. */
+async function renderRoom(): Promise<AudioClip> {
+  const n = 6 * RATE, settle = Math.round(0.25 * RATE);
+  const off = new OfflineAudioContext(1, settle + n, RATE);
+  const noise = off.createNoise({ seed: 0xc47d, seconds: 6 });
+  const lp = off.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 320; lp.Q.value = 0; // dB: linear Q 1
+  const g = off.createGain();
+  g.gain.value = ROOM_GAIN;
+  noise.connect(lp).connect(g).connect(off.destination);
+  noise.start();
+  const r = await off.startRendering();
+  return createClip([r.getChannelData(0).slice(settle)], RATE);
 }
 
 const pads = new Map<string, AudioClip>();
@@ -135,17 +112,13 @@ const notes = new Map<number, AudioClip>();
 const bass: AudioClip[] = [];
 const chimes = new Map<number, AudioClip>();
 let room: AudioClip | null = null;
-/** One rendered voice a frame, once the samples are in; false when all are made. */
-function renderNext(): boolean {
-  for (const beat of [1, 0.5]) for (let r = 0; r <= 3; r++) {
-    const k = `${r}:${beat}`;
-    if (!pads.has(k)) { pads.set(k, padClip(SCALE[r]!, beat * 8)); return true; }
-  }
-  for (let i = 3; i <= 8; i++) if (!notes.has(i)) { notes.set(i, noteClip(SCALE[i]!)); return true; }
-  if (bass.length < 2) { bass.push(bass.length === 0 ? bassClip(110, 0.05) : bassClip(82.4, 0.03)); return true; }
-  for (let i = 5; i < SCALE.length; i++) if (!chimes.has(i)) { chimes.set(i, chimeClip(SCALE[i]!)); return true; }
-  if (!room) { room = roomToneClip(); return true; }
-  return false;
+/** Every voice, one graph at a time (at most 16 may render at once); `room` last, as update()'s go. */
+async function renderVoices(): Promise<void> {
+  for (const beat of [1, 0.5]) for (let r = 0; r <= 3; r++) pads.set(`${r}:${beat}`, await renderPad(SCALE[r]!, beat * 8));
+  for (let i = 3; i <= 8; i++) notes.set(i, await renderNote(SCALE[i]!));
+  bass.push(await renderBass(110, 0.05), await renderBass(82.4, 0.03));
+  for (let i = 5; i < SCALE.length; i++) chimes.set(i, await renderChime(SCALE[i]!));
+  room = await renderRoom();
 }
 
 // -- music and ambience -------------------------------------------------------------------
@@ -194,11 +167,10 @@ function playVoice(clip: AudioClip | undefined, bus: Bus, gain: number): void {
   try { playClip(clip, { bus, gain }); } catch { /* the mixer is full */ }
 }
 
-/** Each frame once the mixer runs: one rendered voice a frame,
- * then the music's beats and the ambience's chimes by mixer time. */
+/** Each frame once the mixer runs and the voices are rendered: the music's beats and the ambience's chimes by mixer time. */
 export function update(): void {
   if (context.state !== "running") return;
-  try { if (renderNext()) return; } catch (e) { console.warn(`audio: ${String(e)}`); return; }
+  if (!room) return;
   const now = context.currentTime;
   // ambience
   if (ambTheme && !ambSound && room) {

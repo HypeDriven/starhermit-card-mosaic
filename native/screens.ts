@@ -22,12 +22,12 @@ import { JOURNEY, LESSONS, CHALLENGES, PRACTICE_DIFFICULTIES } from "../js/conte
 import { MODES } from "../js/session.js";
 import { ACHIEVEMENTS } from "../js/storage.js";
 import { THEMES, getTheme } from "../js/themes.js";
-import { tr, N, pt } from "./i18n.ts";
+import { tr, N } from "./i18n.ts";
 import * as platform from "./platform.ts";
 import * as render from "./render.ts";
 import { buildBoard, layoutBoard } from "./board.ts";
 import {
-  app, askConfirm, closeOverlay, confirmYes, discardSnapshot, dismissToast, goTitle, hasSnapshot, hint, lock, modeSetup,
+  app, askConfirm, closeOverlay, confirmYes, discardSnapshot, goTitle, hasSnapshot, hint, lock, modeSetup,
   openOverlay, openSettings, pause, progress, achievements, recall, replayTutorials, resultsAction, resume, resumeSnapshot,
   rotate, round, session, setBoardScope, settings, showScreen, startChallenge, startDaily, startJourney, startLesson,
   startPractice, topOverlay, toast, undo, utcToday, view, type Mode, type ScreenName,
@@ -38,13 +38,12 @@ import { currentPalette } from "./style.ts";
 interface Layout { lw: number; lh: number; sc: number; ox: number; oy: number; W: number; H: number; wide: boolean; compact: boolean; phone: boolean; shortLand: boolean; vmin: number }
 function layoutNow(): Layout {
   const f = frame();
-  const sc = ui.preferences().scale;
-  const sa = f.safeArea;
-  const lw = Math.max(1, (f.width - sa.left - sa.right) / sc), lh = Math.max(1, (f.height - sa.top - sa.bottom) / sc);
+  const v = ui.viewport!();
+  const sc = v.scale, lw = Math.max(1, v.width), lh = Math.max(1, v.height);
   const shortLand = lw > lh && lh <= 540;
   const wide = !shortLand && lw >= 1024;
   const phone = !shortLand && lw < 700;
-  return { lw, lh, sc, ox: sa.left / sc, oy: sa.top / sc, W: f.width / sc, H: f.height / sc, wide, compact: !wide && !phone && !shortLand, phone, shortLand, vmin: Math.min(lw, lh) };
+  return { lw, lh, sc, ox: v.x, oy: v.y, W: f.width / sc, H: f.height / sc, wide, compact: !wide && !phone && !shortLand, phone, shortLand, vmin: Math.min(lw, lh) };
 }
 const lastHeight = new Map<string, number>();
 
@@ -217,7 +216,6 @@ export function drawScreens(): void {
     }
   }
   overlays(L);
-  toasts(L, playing);
   if (app.caption && settings.captions) {
     const text = "♪ " + tr(app.caption.text);
     const w = Math.min(L.lw * 0.9, 560);
@@ -493,10 +491,10 @@ function titleScreen(L: Layout): void {
         { id: "btn-title-help", text: tr("How to play"), style: ["btn", "btn-quiet"], act: () => showScreen("help") },
       ];
       const link = platform.inviteLink();
-      if (link) tert.push({ id: "btn-title-invite", text: pt("invite"), style: ["btn", "btn-quiet"], act: () => {
-        try { clipboard.writeText(link); toast(() => pt("inviteCopied"), "success"); } catch { toast(() => pt("inviteFailed"), "warn"); }
+      if (link) tert.push({ id: "btn-title-invite", text: tr("starhermit.invite"), style: ["btn", "btn-quiet"], act: () => {
+        try { clipboard.writeText(link); toast(tr("starhermit.inviteCopied"), "success"); } catch { toast(tr("starhermit.inviteLink", { link }), "warn"); }
       } });
-      if (!platform.signedIn()) tert.push({ id: "btn-title-signin", text: pt("signIn"), act: () => { void requestSignIn().catch(() => undefined); } });
+      if (!platform.signedIn()) tert.push({ id: "btn-title-signin", text: tr("starhermit.signIn"), act: () => { void requestSignIn().catch(() => undefined); } });
       flow("title-tertiary", tert, mw, "center", 16);
       const p = progress();
       const bits = [
@@ -504,8 +502,8 @@ function titleScreen(L: Layout): void {
         (p.dailies[utcToday()] ? tr("Today’s daily: done") : tr("Today’s daily: open")),
       ];
       para(bits.join(" · "), mw, "title-summary", "title-summary", true);
-      if (platform.signedIn()) para(pt("signedInAs", { name: platform.displayName() }), mw, "title-summary", "title-signed-in", true);
-      else if (app.signedOut) para(pt("signedOut"), mw, "title-summary", "title-signed-out", true);
+      if (platform.signedIn()) para(tr("starhermit.signedInAs", { name: platform.displayName() ?? "" }), mw, "title-summary", "title-signed-in", true);
+      else if (app.signedOut) para(tr("starhermit.signedOut"), mw, "title-summary", "title-signed-out", true);
     };
     if (side) {
       const artW = Math.min(w * 0.38, 360);
@@ -690,7 +688,7 @@ function resultsScreen(L: Layout): void {
     }
     if (res.lb) {
       const lb = res.lb;
-      para(lb.pending ? pt("lbPosting") : !lb.posted ? pt("lbNotPosted") : lb.rank ? pt("lbRank", { rank: lb.rank }) : pt("lbPosted"), w, "blurb", "results-lb");
+      para(lb.pending ? tr("starhermit.leaderboardPosting") : !lb.posted ? tr("starhermit.leaderboardNotPosted") : lb.rank ? tr("starhermit.leaderboardRank", { rank: lb.rank }) : tr("starhermit.leaderboardPosted"), w, "blurb", "results-lb");
     }
     flow("results-buttons", [
       { id: "btn-results-retry", text: tr("Retry"), act: () => resultsAction("retry") },
@@ -748,7 +746,7 @@ function profileScreen(L: Layout): void {
       if (nameDraft === null) nameDraft = settings.profileName;
       ui.row("profile-form", () => {
         nameDraft = ui.textField("profile-name", nameDraft ?? "", { maxChars: 24, width: Math.min(320, w - 100) });
-        const save = (): void => { platform.setSetting("profileName", (nameDraft ?? "").trim().slice(0, 24)); toast(() => tr("Display name saved"), "success"); };
+        const save = (): void => { platform.setSetting("profileName", (nameDraft ?? "").trim().slice(0, 24)); toast(tr("Display name saved"), "success"); };
         if (ui.submitted("profile-name")) save();
         if (ui.style("btn", "btn-primary").id("btn-profile-save").button(tr("Save"))) save();
       }, { spacing: 8, align: "center" });
@@ -966,17 +964,3 @@ function drawerOverlay(L: Layout, side: "left" | "right"): void {
   });
 }
 
-// ------------------------------------------------------------------ toasts
-function toasts(L: Layout, playing: boolean): void {
-  if (!app.toasts.length) return;
-  const w = Math.min(L.lw - 32, 560);
-  const atTop = app.screen === "results";
-  ui.place("toasts", atTop ? { anchor: "top", y: 4 } : { anchor: "bottom", y: playing && L.phone ? 96 : 72 }, () => {
-    for (const t of app.toasts) {
-      const text = t.text();
-      const cls = ["toast", ...(t.kind === "warn" ? ["toast-warn"] : t.kind === "success" ? ["toast-success"] : [])];
-      const fits = textWidth(text, cls) + 40 <= w;
-      if (ui.style(...cls).id(`toast-${t.id}`).button(text, fits ? {} : { content: () => ui.style({ text: { align: "center" } }).paragraph(text, w - 40) })) dismissToast(t.id);
-    }
-  }, { spacing: 6, align: "center", width: w });
-}

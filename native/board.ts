@@ -158,7 +158,7 @@ function drawCard(x: number, y: number, w: number, h: number, card: Card, q: num
   for (let d = 0; d < 4; d++) {
     const a = -Math.PI / 2 + d * (Math.PI / 2) + angle;
     const id = card.edges[d]!;
-    drawMotif(id, cx + Math.cos(a) * edgeR, cy + Math.sin(a) * edgeR, m, angle, colors[id]!, t.cardFace);
+    drawMotif(id, cx + Math.cos(a) * edgeR, cy + Math.sin(a) * edgeR, m, angle, colors[id]!);
   }
   const ringD = f * 0.44;
   if (ringD > 14 * k) {
@@ -168,7 +168,7 @@ function drawCard(x: number, y: number, w: number, h: number, card: Card, q: num
     for (let d = 0; d < 4; d++) {
       const a = -Math.PI / 2 + d * (Math.PI / 2) + angle;
       const id = card.edges[d]!;
-      drawMotif(id, cx + Math.cos(a) * mr, cy + Math.sin(a) * mr, mini, angle, colors[id]!, t.cardFace);
+      drawMotif(id, cx + Math.cos(a) * mr, cy + Math.sin(a) * mr, mini, angle, colors[id]!);
     }
   }
   if (card.locked) seal(x + w - 3 * k, y + 3 * k, k, t.match);

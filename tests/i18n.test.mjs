@@ -2,7 +2,7 @@
 // (native/*.ts), the content and the store show is translated in every
 // locale (en-GB → en-US, es-ES → es-419, fr-CA → fr-FR inherit), with its
 // placeholders, and no table keeps a key nothing shows; the classic
-// js/i18n.js switches locale as native/i18n.ts drives it.
+// the tables are assets/strings.json (native/i18n.ts).
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { test } from './helpers.mjs';
@@ -27,21 +27,10 @@ export function usedKeys() {
   for (const m of Object.values(MODES)) keys.add(m.label);
   for (const a of ACHIEVEMENTS) { keys.add(a.name); keys.add(a.desc); }
   for (const m of read('js/session.js').matchAll(/text: '((?:[^'\\]|\\.)*)'/g)) keys.add(m[1]);
-  return [...keys].sort();
+  return [...keys].filter((k) => !k.startsWith('starhermit.')).sort();
 }
 
 test('every used key is translated in every locale; placeholders and markup intact', () => {
-  assert.deepEqual(audit(loadTables(ROOT, 'js/strings.js', 'CM_STRINGS'), usedKeys()), []);
+  assert.deepEqual(audit(JSON.parse(read('assets/strings.json')), usedKeys()), []);
 });
 
-test('the locale switches as the engine client sets it, with the regional tables', () => {
-  const { I18N } = bootI18n(ROOT, { strings: 'js/strings.js', i18n: 'js/i18n.js', global: 'CMI18N' });
-  assert.equal(I18N.lang, 'en-US');
-  assert.equal(I18N.setLocale('de-DE'), 'de-DE');
-  assert.equal(I18N.T('Resume'), 'Fortsetzen');
-  I18N.setLocale('en-GB');
-  assert.equal(I18N.T('Color-vision-safe motif palette'), 'Colour-vision-safe motif palette');
-  assert.equal(I18N.T('Resume'), 'Resume');
-  assert.equal(I18N.setLocale('xx-YY'), 'en-US');
-  assert.equal(I18N.T('{n} moves', { n: 3 }), '3 moves');
-});

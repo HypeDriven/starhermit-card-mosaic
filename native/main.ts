@@ -26,7 +26,7 @@ import { JOURNEY, LESSONS, CHALLENGES, PRACTICE_DIFFICULTIES, journeyContent, le
 import { listLegalCommands, TERMINAL, compareResults, quantizeElapsed } from "../js/rules.js";
 import { journeyStars, unlockAchievement, ACHIEVEMENTS, saveSnapshot, loadSnapshot, clearSnapshot } from "../js/storage.js";
 import * as audio from "./audio.ts";
-import { tr, N, pt, onLocaleChange } from "./i18n.ts";
+import { tr, N, onLocaleChange } from "./i18n.ts";
 import * as platform from "./platform.ts";
 import { lookFor } from "./quality.ts";
 import * as render from "./render.ts";
@@ -47,7 +47,6 @@ export interface ResultsView {
   achievements: string[]; mode: Mode;
   lb: { pending?: boolean; posted?: boolean; rank?: number | null } | null;
 }
-export interface Toast { text: () => string; kind: "info" | "warn" | "success"; until: number; id: number }
 export interface ConfirmView { title: string; message: string; confirm: string; action: "restart" | "concede" | "leave" }
 
 const STEP_MS = 1000 / 60;
@@ -68,7 +67,6 @@ export const app = {
   setup: null as SetupView | null,
   results: null as ResultsView | null,
   boards: { scope: "global" as "global" | "friends", loading: false, rows: null as platform.BoardRow[] | null, casual: false },
-  toasts: [] as Toast[],
   caption: null as { text: string; until: number } | null,
   signedOut: false,
   flourishAt: -10,
@@ -94,7 +92,6 @@ export const round = {
 export const settings = platform.settings;
 const now = (): number => frame().time;
 let resolveLeft = -1;
-let toastSeq = 0;
 let suspendedAt = 0;
 let autoPaused = false;
 
@@ -112,12 +109,16 @@ export function profileName(): string { return platform.displayName(); }
 export function announce(msg: string, assertive = false): void {
   if (msg) ui.announce(msg.slice(0, 500), { politeness: assertive ? "assertive" : "polite" });
 }
-/** A transient toast; `text` re-reads in the current language. */
-export function toast(text: () => string, kind: Toast["kind"] = "info"): void {
-  while (app.toasts.length >= 4) app.toasts.shift();
-  app.toasts.push({ text, kind, until: now() + 4.2, id: ++toastSeq });
+/** A transient toast; a press dismisses it. Offsets are the old distances from the edge − the stack's 16 px margin. */
+export function toast(text: string, kind: "info" | "warn" | "success" = "info"): void {
+  const v = ui.viewport!();
+  const atTop = app.screen === "results";
+  const phone = !(v.width > v.height && v.height <= 540) && v.width < 700;
+  ui.toast!(text, {
+    duration: 4.2, announce: false, position: atTop ? "top" : "bottom", offset: atTop ? 0 : !app.screen && phone ? 80 : 56,
+    style: ["toast", ...(kind === "warn" ? ["toast-warn"] : kind === "success" ? ["toast-success"] : [])],
+  });
 }
-export function dismissToast(id: number): void { app.toasts = app.toasts.filter((t) => t.id !== id); }
 function caption(key: string): void {
   if (!settings.captions) return;
   app.caption = { text: key, until: now() + 2.2 };
@@ -303,7 +304,7 @@ export function resumeSnapshot(): void {
   const s = Session.restore(snap);
   if (!s) {
     clearSnapshot();
-    toast(() => tr("Saved round was corrupted and has been cleared."), "warn");
+    toast(tr("Saved round was corrupted and has been cleared."), "warn");
     goTitle();
     return;
   }
@@ -379,12 +380,12 @@ export function onCell(cell: number): void {
   // A tray card in hand and an occupied cell: explain, don't forward.
   if (occupied && round.selectedTray !== null) {
     announce(tr(REASON_TEXT["cell-occupied"]!), true);
-    toast(() => tr(REASON_TEXT["cell-occupied"]!), "warn");
+    toast(tr(REASON_TEXT["cell-occupied"]!), "warn");
     return;
   }
   if (!occupied && round.selectedTray !== null) { dispatch({ type: "place", tray: round.selectedTray, cell }); return; }
   if (!occupied && round.selectedCell !== null) {
-    toast(() => tr("Recall the card first, then place it here."), "warn");
+    toast(tr("Recall the card first, then place it here."), "warn");
     audio.event("invalid");
     return;
   }
@@ -395,7 +396,7 @@ export function onCell(cell: number): void {
       audio.event("select");
     } else if (round.selectedCell === cell) round.selectedCell = null;
     else { dispatch({ type: "swap", a: round.selectedCell, b: cell }); return; }
-  } else toast(() => tr("Select a tray card first."), "info");
+  } else toast(tr("Select a tray card first."), "info");
 }
 /** Cancel: drop the selection, else pause. */
 export function cancel(): void {
@@ -408,7 +409,7 @@ export function lock(): void { if (canInteract() && round.selectedCell !== null 
 export function recall(): void { if (canInteract() && round.selectedCell !== null && view().canRecall) dispatch({ type: "recall", cell: round.selectedCell }); }
 export function undo(): void {
   if (!session || !canInteract()) return;
-  if (!view().canUndo) { toast(() => tr("Undo is not available here."), "warn"); return; }
+  if (!view().canUndo) { toast(tr("Undo is not available here."), "warn"); return; }
   const r = session.undo();
   if (r.ok) {
     audio.event("undo");
@@ -416,9 +417,9 @@ export function undo(): void {
     round.selectedTray = null;
     round.selectedCell = null;
     board.playEvents([{ type: "undo" }], session.state);
-    toast(() => tr("Undone"), "info");
+    toast(tr("Undone"), "info");
     caption(N("undo"));
-  } else toast(() => tr("Undo is not available here."), "warn");
+  } else toast(tr("Undo is not available here."), "warn");
 }
 export function hint(): void {
   if (!session || !canInteract() || !view().canHint) return;
@@ -427,7 +428,7 @@ export function hint(): void {
     round.hint = h;
     audio.event("hint");
     announce(tr(h.text));
-  } else toast(() => tr("No hint available right now."), "info");
+  } else toast(tr("No hint available right now."), "info");
 }
 
 type Cmd = { type: string; tray?: number; cell?: number; a?: number; b?: number };
@@ -485,14 +486,14 @@ function handleEvents(events: Ev[], ok: boolean): void {
       case "invalid": {
         const key = REASON_TEXT[e.reason ?? ""] || N("That move is not allowed.");
         announce(tr(key), true);
-        toast(() => tr(key), "warn");
+        toast(tr(key), "warn");
         caption(N("not allowed"));
         break;
       }
       case "terminal": {
         const key = N("Round over — results are ready.");
         announce(tr(key), true);
-        toast(() => tr(key), "info");
+        toast(tr(key), "info");
         caption(e.reason === "complete" ? N("mosaic complete") : N("round over"));
         render.terminal(e.reason === "complete");
         break;
@@ -666,7 +667,7 @@ function showResults(): void {
     next: nextAction(result), achievements: newly, mode: round.mode, lb: null,
   };
   app.results = view;
-  app.toasts = [];
+  ui.clearToasts!();
   showScreen("results", "results-next");
   announce(tr("Round results"));
   audio.event(result.terminalReason === TERMINAL.COMPLETE ? "complete" : "fail");
@@ -717,7 +718,7 @@ export function setBoardScope(scope: "global" | "friends"): void {
 }
 
 // ------------------------------------------------------------------ settings hooks
-export function replayTutorials(): void { app.overlays = []; showScreen("lessons"); toast(() => tr("Tutorials will play again"), "info"); }
+export function replayTutorials(): void { app.overlays = []; showScreen("lessons"); toast(tr("Tutorials will play again"), "info"); }
 export function practiceList(): typeof PRACTICE_DIFFICULTIES { return PRACTICE_DIFFICULTIES; }
 
 // ------------------------------------------------------------------ input
@@ -775,7 +776,7 @@ onStart(() => {
   applyLook();
   render.loadIdle("studio");
   goTitle();
-  if (hasSnapshot()) toast(() => tr("An interrupted round was saved — Resume from the title screen."), "info");
+  if (hasSnapshot()) toast(tr("An interrupted round was saved — Resume from the title screen."), "info");
 });
 onPreferencesChange((p) => render.setReducedMotion(p.reducedMotion));
 platform.onSettingsChange(() => {
@@ -784,7 +785,7 @@ platform.onSettingsChange(() => {
   render.setTheme(th);
 });
 onLocaleChange(() => { viewCache = null; });
-onSessionEnded(() => { app.signedOut = true; toast(() => pt("signedOut"), "info"); });
+onSessionEnded(() => { app.signedOut = true; toast(tr("starhermit.signedOut"), "info"); });
 onPlayerChange((p) => { if (p) app.signedOut = false; });
 onSuspend(() => {
   suspendedAt = Date.now();
@@ -797,7 +798,7 @@ onResume(() => {
   const awayMs = Date.now() - suspendedAt;
   const mins = Math.floor(awayMs / 60000);
   const away = mins > 0 ? tr("{n} min", { n: mins }) : tr("{n} s", { n: Math.round(awayMs / 1000) });
-  toast(() => tr("Welcome back — paused for {time}. Your clock was stopped.", { time: away }), "info");
+  toast(tr("Welcome back — paused for {time}. Your clock was stopped.", { time: away }), "info");
 });
 onQuit(() => { if (session && !session.result) storeSnapshot(); });
 
@@ -836,7 +837,6 @@ onUpdate((dt) => {
   applyLook();
   audio.update();
   const t0 = now();
-  if (app.toasts.length && app.toasts[0]!.until < t0) app.toasts = app.toasts.filter((x) => x.until >= t0);
   if (app.caption && t0 > app.caption.until) app.caption = null;
 });
 onRender(() => {
