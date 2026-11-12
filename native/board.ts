@@ -1,3 +1,4 @@
+import { localizedStyle as __l10nStyle } from "./l10n/font.ts";
 // The mosaic board as the browser build's DOM felt panel drew it (index.html
 // #board-container, js/ui.js, css/style.css): the felt panel (with the
 // detailed table's sheen and inner shadow), the grid of cells and the tray
@@ -233,7 +234,7 @@ export function buildBoard(L: BoardLayout): void {
       }
     }, { spacing: GAP, align: "center", padding: { top: 6 } });
   };
-  ui.style("felt-panel", panelStyle).id("board").column("board", () => {
+  ui.style(__l10nStyle("felt-panel"), __l10nStyle(panelStyle)).id("board").column("board", () => {
     if (L.side) ui.row("board-row", () => { gridBlock(); trayBlock(); }, { spacing: TRAY_GAP, align: "center" });
     else { gridBlock(); trayBlock(); }
   }, { spacing: TRAY_GAP, align: "center", justify: "center" });
