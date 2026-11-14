@@ -1,5 +1,7 @@
 # Card Mosaic
 
+**[▶ Play Card Mosaic on StarHermit](https://dashboard.starhermit.com/play/8c9288fb-71c0-4b7b-a1a3-ec607721e7f2)**
+
 An original adjacency puzzle: place edge-coded cards into a rectangular mosaic so neighboring motifs connect. A StarHermit engine script game (engine 1.24.0): the felt board, HUD and menus on `starhermit:ui`, the studio card table on `starhermit:scene`, played natively by the StarHermit client and in browsers by the engine's web runtime.
 
 ## Run
