@@ -207,7 +207,7 @@ function artImage(tex: Texture, w: number, cls: string): void {
 
 // ------------------------------------------------------------------ the frame
 let topH = 52;
-export function drawScreens(): void {
+function drawScreensImmediate(): void {
   loadArt();
   const L = layoutNow();
   const f = frame();
@@ -981,3 +981,10 @@ function drawerOverlay(L: Layout, side: "left" | "right"): void {
   });
 }
 
+
+export function drawScreens(): void {
+  if (app.screen !== "help") { drawScreensImmediate(); return; }
+  const actions = ["up","down","left","right","select","cancel","undo","hint","rotate","lock","recall","pause"];
+  const version = JSON.stringify([(app as any).settings ?? (app as any).options ?? {}, (platform as any).options ?? {}, actions.map((action) => bindings(action))]);
+  ui.retain!("help-screen", version, drawScreensImmediate);
+}
