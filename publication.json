@@ -12,7 +12,7 @@
     "metadataSource": "starhermit.txt",
     "createdAt": "2026-09-01T07:00:58.629438+00:00",
     "coverArtSource": "manifest",
-    "coverArtUpdatedAt": "2026-11-27T07:59:39.170895+00:00",
+    "coverArtUpdatedAt": "2026-11-27T17:04:38.913984+00:00",
     "submittedByUserId": "2712e04e-461b-4d23-81ae-e40b429128a8",
     "submittedByUsername": "starhermit",
     "hosting": {
@@ -22,9 +22,9 @@
       "pinnedCommitSha": null,
       "deployedCommitSha": null,
       "deployError": null,
-      "deployedAt": "2026-11-27T07:59:37.91718+00:00",
+      "deployedAt": "2026-11-27T17:04:38.902027+00:00",
       "externalLaunchUrl": null,
-      "engineVersion": "1.52.0",
+      "engineVersion": "1.53.0",
       "deployWarning": null
     },
     "description": "Arrange patterned cards in a grid so every touching edge matches and the whole mosaic fits together.",
@@ -36,19 +36,19 @@
     "links": [],
     "isDisabled": false
   },
-  "publishedAt": "2026-11-27T07:59:39.809Z",
-  "sourceCommit": "2a480c47c6af3d020cb07d47ba8e5f1e5ba3237a",
-  "bytesReceived": 3816166,
-  "archiveSha256": "d9224dcfa0a97112925bc601628e4fe4ba4b2466836a6a5b0a17fd0d2046f20f",
+  "publishedAt": "2026-11-27T17:04:39.247Z",
+  "sourceCommit": "b3bb77674e75859877de8af3144076c83ce6d707",
+  "bytesReceived": 3816180,
+  "archiveSha256": "9db21e92727b8ef23898c6266e90fd183d571315117b5a0e45d4b198e3b88456",
   "indexSha256": "3d2eef6eece623bd2a2bafdb419f251653e119a5c2f0d5327e2386066d016307",
   "result": {
     "clientPublished": true,
     "serverImageLoaded": false,
     "imageDigest": null,
-    "bytesReceived": 3816166,
+    "bytesReceived": 3816180,
     "mode": "replace",
     "filesRemoved": 0,
-    "engineVersion": "1.52.0",
+    "engineVersion": "1.53.0",
     "deployWarning": null
   },
   "liveVerification": {
